@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <meta name="description" content="Explore the public GitHub activity, project portfolio, and technology patterns behind any developer.">
+  <title>GH-Insights — GitHub Developer Intelligence</title>
+  <link rel="stylesheet" href="/css/main.css">
+  <link rel="stylesheet" href="/css/components.css">
+  <link rel="stylesheet" href="/css/dashboard.css">
+  <link rel="stylesheet" href="/css/responsive.css">
+  <link rel="stylesheet" href="/css/redesign.css">
+  <script type="module" src="/js/app.js"></script>
+</head>
+<body>
+  <canvas class="constellation" id="constellation" aria-hidden="true"></canvas>
+  <div class="site-shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="GH-Insights home">
+        <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M6 23.5 13 9l5.1 10.2L22 12l4 11.5"/><circle cx="6" cy="23.5" r="2"/><circle cx="13" cy="9" r="2"/><circle cx="18.1" cy="19.2" r="2"/><circle cx="22" cy="12" r="2"/><circle cx="26" cy="23.5" r="2"/></svg></span>
+        <span class="brand-name">GH<span>·</span>INSIGHTS</span>
+      </a>
+      <div class="header-center">
+        <h1>GitHub Personality Analyzer</h1>
+        <p>Explore the story behind any GitHub developer.</p>
+      </div>
+      <div class="header-actions">
+        <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch color theme" title="Switch color theme">
+          <svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+          <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.2 15.2A8.6 8.6 0 0 1 8.8 3.8 8.7 8.7 0 1 0 20.2 15.2Z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <main>
+      <section class="search-stage" aria-labelledby="search-heading">
+        <div class="hero-art" aria-hidden="true">
+          <svg class="hero-art-left" viewBox="0 0 390 720" preserveAspectRatio="xMinYMin meet">
+            <defs>
+              <linearGradient id="cat-coat" x1="0" y1="0" x2="0.8" y2="1"><stop stop-color="#302d40"/><stop offset=".48" stop-color="#191725"/><stop offset="1" stop-color="#0c0a14"/></linearGradient>
+              <linearGradient id="cat-face" x1=".45" y1="0" x2=".5" y2="1"><stop stop-color="#ffd2df"/><stop offset=".48" stop-color="#ff9dbd"/><stop offset="1" stop-color="#ed729f"/></linearGradient>
+              <radialGradient id="cat-eye" cx=".7" cy=".25" r=".8"><stop stop-color="#a399c9"/><stop offset=".45" stop-color="#47376c"/><stop offset="1" stop-color="#171326"/></radialGradient>
+              <linearGradient id="left-tile" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#8a55ff"/><stop offset="1" stop-color="#6334ef"/></linearGradient>
+              <filter id="clay-shadow" x="-30%" y="-30%" width="170%" height="180%"><feGaussianBlur in="SourceAlpha" stdDeviation="9"/><feOffset dy="12"/><feComponentTransfer><feFuncA type="linear" slope=".22"/></feComponentTransfer><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+              <filter id="soft-glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3"/></filter>
+            </defs>
+            <path fill="#69f09a" d="M-40 8C23-33 109 4 133 72c28 79-7 146-49 202-37 49-29 97 22 141 42 36 46 105 4 142-48 43-120 24-150-20Z"/>
+            <path fill="#ff7b17" d="M-40 96h112c25 0 45 20 45 45v48c0 20-15 35-35 35H-40Z"/>
+            <path fill="#6338f2" d="M-36 202h148c25 0 43 19 43 43v91c0 19-15 34-34 34H-36Z"/>
+            <path fill="#fb54c2" d="M-40 332h174c26 0 46 20 46 46v178c0 21-17 38-38 38H-40Z"/>
+            <g filter="url(#clay-shadow)" transform="translate(80 145) scale(1.1)">
+              <path fill="url(#cat-coat)" d="M34 68C18 44 14 16 22-8l7-32 31 23c24-12 56-16 83-9l35-25 9 54c35 25 52 67 47 112-4 40-25 72-59 91l23 33-89 20-98-23 28-39C-3 184-18 153-18 118c0-19 8-37 23-50Z" transform="translate(20 51)"/>
+              <g transform="translate(0 80) scale(1 .78)">
+                <path fill="url(#cat-face)" d="M42 50 31 2l39 28c23-9 52-10 75-2l37-26 1 57c24 24 36 51 34 83-2 39-31 70-75 82-42 11-98 4-128-23-23-21-31-53-25-87 5-25 23-49 53-64Z"/>
+                <ellipse cx="131" cy="43" rx="42" ry="12" fill="#fff" opacity=".2" filter="url(#soft-glow)"/>
+                <ellipse cx="58" cy="130" rx="24" ry="13" fill="#f66f99" opacity=".34" filter="url(#soft-glow)"/>
+                <ellipse cx="201" cy="128" rx="23" ry="13" fill="#f66f99" opacity=".34" filter="url(#soft-glow)"/>
+                <ellipse cx="92" cy="82" rx="28" ry="39" fill="#fff1fa"/>
+                <ellipse cx="92" cy="84" rx="21" ry="33" fill="url(#cat-eye)"/>
+                <ellipse cx="165" cy="80" rx="27" ry="38" fill="#fff1fa"/>
+                <ellipse cx="165" cy="82" rx="20" ry="32" fill="url(#cat-eye)"/>
+                <ellipse cx="101" cy="74" rx="12" ry="17" fill="#fff"/>
+                <ellipse cx="174" cy="72" rx="11" ry="16" fill="#fff"/>
+                <circle cx="99" cy="70" r="5" fill="#fff"/><circle cx="172" cy="68" r="5" fill="#fff"/>
+                <ellipse cx="130" cy="104" rx="8" ry="5.5" fill="#24182e"/>
+                <path d="M130 110c-7 9-17 11-26 5m26-5c8 10 20 11 29 4" fill="none" stroke="#7e3653" stroke-width="4" stroke-linecap="round"/>
+                <path d="M58 152 5 145m55 20L8 179m172-30 52-9m-53 28 49 16" fill="none" stroke="#171421" stroke-width="7" stroke-linecap="round"/>
+              </g>
+              <path d="M39 68c12-23 38-37 66-42M151 35c24 4 43 15 55 33" fill="none" stroke="#575064" stroke-width="6" stroke-linecap="round" opacity=".55"/>
+            </g>
+            <g filter="url(#clay-shadow)">
+              <rect x="84" y="382" width="230" height="204" rx="27" fill="url(#left-tile)"/>
+              <text class="art-code" x="122" y="446">.java</text><text class="art-code" x="100" y="499">.java</text><text class="art-code" x="194" y="499">.java</text>
+            </g>
+            <rect x="74" y="550" width="224" height="185" rx="24" fill="#e9b907" filter="url(#clay-shadow)"/>
+            <g class="pixel-cross" transform="translate(82 558)"><rect x="54" y="0" width="48" height="48"/><rect x="102" y="0" width="48" height="48"/><rect x="6" y="48" width="48" height="48"/><rect x="54" y="48" width="48" height="48"/><rect x="102" y="48" width="48" height="48"/><rect x="150" y="48" width="48" height="48"/><rect x="54" y="96" width="48" height="48"/><rect x="102" y="96" width="48" height="48"/></g>
+            <path class="pixel-cross-center" d="M154 605h48v24h24v48h-24v24h-48v-24h-24v-48h24Z"/>
+            <rect class="art-pixel" x="205" y="127" width="28" height="28" rx="5"/><rect class="art-pixel" x="236" y="99" width="25" height="25" rx="5"/>
+          </svg>
+          <svg class="hero-art-right" viewBox="0 0 410 720" preserveAspectRatio="xMaxYMin meet">
+            <defs>
+              <linearGradient id="terminal-green" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#c5ff25"/><stop offset="1" stop-color="#76df11"/></linearGradient>
+              <linearGradient id="terminal-panel" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#168b3f"/><stop offset="1" stop-color="#08722f"/></linearGradient>
+              <linearGradient id="right-purple" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#8455ff"/><stop offset="1" stop-color="#6238f4"/></linearGradient>
+            </defs>
+            <g transform="translate(0 60)">
+              <path fill="#36bdf5" d="M208 118c66-28 146 2 181 58v146c-28 37-69 58-110 53-56-7-86-48-80-94 6-40-12-68-52-82-37-13-42-58-12-81 20-15 45-13 73 0Z"/>
+              <path fill="url(#terminal-green)" d="M118 143c0-28 23-51 51-51h178c27 0 48 22 48 49v147c0 29-24 53-53 53H148c-28 0-51-23-51-51 0-24 13-40 32-50 19-10 28-29 28-48s-12-36-27-48c-9-8-12-17-12-31Z" filter="url(#clay-shadow)"/>
+              <rect x="157" y="151" width="163" height="150" rx="31" fill="url(#terminal-panel)" filter="url(#clay-shadow)"/>
+              <path d="m197 201 34 31-34 31m49 1h37" fill="none" stroke="#e4ffc5" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+            </g>
+            <path d="M255 401c45-26 115-8 145 33v148c-31 39-73 60-120 51-50-10-72-48-66-91 5-38-10-63-42-79-29-15-36-47-16-70 23-26 62-24 99 8Z" fill="url(#right-purple)"/>
+            <path d="M286 450c55-12 103 4 132 39v159c-28 43-80 72-136 62-48-9-69-42-60-82 6-26-4-46-26-62-32-23-34-68-4-94 23-19 59-27 94-22Z" fill="#fa4fae"/>
+            <path fill="#ffda53" d="M34 624c59-44 140-55 207-22 42 20 72 55 92 98H0Z"/>
+            <g class="art-pixel"><rect x="332" y="30" width="34" height="34" rx="5"/><rect x="379" y="30" width="34" height="34" rx="5"/><rect x="355" y="76" width="34" height="34" rx="5"/><rect x="332" y="123" width="34" height="34" rx="5"/></g>
+          </svg>
+          <svg class="hero-bottom" viewBox="0 0 1600 180" preserveAspectRatio="none" aria-hidden="true">
+            <path fill="#ffd83f" d="M0 89c58-52 125-38 172 5 43-49 113-46 162 1 44-33 100-29 141 14 51-72 142-91 211-46 41-41 111-49 165-5 53-58 126-62 185-8 48-63 129-78 194-22 52-66 143-74 211-24 44-33 104-31 159 6V180H0Z"/>
+            <path fill="#b88bff" d="M0 119c53-54 108-57 161-8 46-55 101-66 153-19 51-44 103-33 148 12 47-73 119-79 176-25 54-65 123-67 181-11 52-48 105-39 153 15 52-50 112-58 163-16 53-43 113-33 162 17 53-55 121-50 180 1 42-33 81-29 123 3V180H0Z"/>
+            <path fill="#55ed8d" d="M0 134c55-27 109-16 155 27 45-61 99-68 152-23 45-62 103-61 159 3 43-58 102-67 159-23 53-44 113-34 161 25 49-46 107-36 154 22 48-54 102-55 157-3 42-53 100-60 153-18 49-51 101-51 152 2 48-26 97-19 147 12V180H0Z"/>
+            <path fill="var(--bg)" d="M0 113c131-32 217 45 362 59 140 14 224-19 350-6 121 13 208 36 339 26 180-14 276-97 549-72V180H0Z"/>
+          </svg>
+        </div>
+        <div class="hero-content">
+          <div class="mode-switch hero-mode-switch" role="tablist" aria-label="Analysis mode">
+            <button class="mode-tab is-active" id="mode-insights" type="button" role="tab" aria-selected="true" aria-controls="insights-view"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="13" width="4" height="8" rx="1"/><rect x="10" y="8" width="4" height="13" rx="1"/><rect x="17" y="3" width="4" height="18" rx="1"/></svg><span>Insights</span></button>
+            <button class="mode-tab" id="mode-compare" type="button" role="tab" aria-selected="false" aria-controls="compare-view"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 7 4 4 4-4m-8 10 4-4 4 4M13 8l7 7m-4-7 4-4m-4 4 4 4"/></svg><span>V/S</span></button>
+          </div>
+          <div class="eyebrow"><span class="eyebrow-line"></span> PUBLIC DATA, CLEARER PICTURE <span class="eyebrow-line"></span></div>
+          <h2 id="search-heading">A developer’s work tells a story.</h2>
+          <p class="stage-copy">Follow the projects, technologies, and public activity that shape it.</p>
+
+          <div id="insights-view" class="mode-view" role="tabpanel" aria-labelledby="mode-insights">
+          <form id="explore-form" class="search-form" action="https://github.com/search" method="get" novalidate>
+            <label class="sr-only" for="username-input">GitHub username</label>
+            <span class="search-github-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 .8a11.2 11.2 0 0 0-3.54 21.82c.56.1.77-.24.77-.54v-2.08c-3.13.68-3.79-1.33-3.79-1.33-.5-1.3-1.25-1.65-1.25-1.65-1.02-.7.08-.69.08-.69 1.13.08 1.73 1.16 1.73 1.16 1 .1.75 1.8 2.98 1.38.1-.73.4-1.23.72-1.52-2.5-.28-5.13-1.25-5.13-5.58 0-1.24.44-2.25 1.16-3.05-.12-.29-.5-1.45.11-3.02 0 0 .95-.3 3.08 1.16a10.7 10.7 0 0 1 5.6 0c2.14-1.45 3.08-1.16 3.08-1.16.61 1.57.23 2.73.11 3.02.72.8 1.16 1.81 1.16 3.05 0 4.34-2.63 5.3-5.14 5.58.4.35.76 1.04.76 2.1v3.11c0 .3.2.65.77.54A11.2 11.2 0 0 0 12 .8Z"/></svg></span>
+            <span class="input-prefix" aria-hidden="true">github.com&nbsp; /</span>
+            <input id="username-input" name="q" type="text" placeholder="Enter a GitHub username" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="39" aria-describedby="input-hint input-error">
+            <button class="button button-primary" type="submit"><span>Explore</span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11m-5-5 5 5-5 5"/></svg></button>
+          </form>
+          <p class="input-hint" id="input-hint">Public GitHub profiles only. No sign-in required.</p>
+          <p class="form-error" id="input-error" role="alert" hidden></p>
+          </div>
+
+          <div id="compare-view" class="mode-view" role="tabpanel" aria-labelledby="mode-compare" hidden>
+          <form id="compare-form" class="compare-form" novalidate>
+            <div class="compare-input-wrap"><label class="sr-only" for="username-a">First GitHub username</label><span class="input-prefix" aria-hidden="true">github.com /</span><input id="username-a" type="text" placeholder="Username A" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="39"></div>
+            <span class="versus-mark" aria-hidden="true">VS</span>
+            <div class="compare-input-wrap"><label class="sr-only" for="username-b">Second GitHub username</label><span class="input-prefix" aria-hidden="true">github.com /</span><input id="username-b" type="text" placeholder="Username B" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="39"></div>
+            <button class="button button-primary compare-submit" type="submit"><span>Compare</span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11m-5-5 5 5-5 5"/></svg></button>
+          </form>
+          <p class="input-hint">A neutral look at two public developer profiles.</p>
+          <p class="form-error" id="compare-error" role="alert" hidden></p>
+          </div>
+
+          <div class="recent-row" id="recent-row" hidden>
+            <span class="recent-label">RECENT</span><div class="recent-list" id="recent-list"></div>
+            <button type="button" class="text-button clear-history" id="clear-history"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 3v6m4-6v6"/></svg><span>Clear history</span></button>
+          </div>
+        </div>
+      </section>
+
+      <section class="loading-panel" id="loading-panel" aria-live="polite" hidden>
+        <div class="loader-ring" aria-hidden="true"></div><div><strong id="loading-title">Reading public profile</strong><p id="loading-copy">Collecting repositories and recent activity from GitHub.</p></div>
+      </section>
+      <section class="error-panel" id="error-panel" role="alert" hidden>
+        <span class="status-indicator status-danger" aria-hidden="true"></span><div class="error-content"><strong id="error-title">Could not load this profile</strong><p id="error-copy"></p></div><button class="button button-secondary" id="retry-button" type="button">Try again</button>
+      </section>
+
+      <noscript><p class="no-script-note">GH-Insights needs JavaScript to build reports. The username form still opens GitHub search directly.</p></noscript>
+
+      <div id="report-root" aria-live="polite"></div>
+      <div id="comparison-root" aria-live="polite"></div>
+    </main>
+
+    <footer class="site-footer"><span>GH·INSIGHTS</span><span>Built from public GitHub data. Interpretations are signals, not certainties.</span><a href="https://github.com" target="_blank" rel="noopener noreferrer">Data source: GitHub REST API</a></footer>
+  </div>
+</body>
+</html>
