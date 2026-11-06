@@ -1,7 +1,7 @@
 import { createReadStream } from "node:fs";
-import { readdir, realpath, stat } from "node:fs/promises";
+import { realpath, stat } from "node:fs/promises";
 import { createServer } from "node:http";
-import { extname, join, relative, resolve, sep } from "node:path";
+import { extname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { errorPayload, json, setSecurityHeaders } from "../lib/security.js";
 import { HttpError } from "../lib/validation.js";
@@ -29,24 +29,19 @@ const STATIC_SECURITY_HEADERS = {
   "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://avatars.githubusercontent.com; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self' https://github.com"
 };
 
-async function walkJavaScript(directory) {
-  const files = [];
-  for (const entry of await readdir(directory, { withFileTypes: true })) {
-    const path = join(directory, entry.name);
-    if (entry.isDirectory()) files.push(...await walkJavaScript(path));
-    else if (entry.isFile() && entry.name.endsWith(".js")) files.push(path);
-  }
-  return files;
-}
-
 export async function loadApiRoutes(apiDirectory = join(PROJECT_ROOT, "api")) {
+  const projectRoot = resolve(apiDirectory, "..");
+  const registryUrl = pathToFileURL(join(projectRoot, "lib", "api-routes.js")).href;
+  const registry = await import(registryUrl);
+  if (!(registry.API_ROUTE_HANDLERS instanceof Map)) throw new Error("API route registry is not available.");
+
   const routes = new Map();
-  for (const file of await walkJavaScript(apiDirectory)) {
-    const routePath = `/api/${relative(apiDirectory, file).split(sep).join("/").replace(/\.js$/i, "")}`;
-    const module = await import(pathToFileURL(file).href);
-    if (typeof module.default !== "function") throw new Error(`API route ${routePath} has no default handler.`);
-    routes.set(routePath, module.default);
-    routes.set(`${routePath}.js`, module.default);
+  for (const [routePath, handler] of registry.API_ROUTE_HANDLERS) {
+    if (!routePath.startsWith(API_PREFIX) || typeof handler !== "function") {
+      throw new Error(`Invalid API route registry entry: ${routePath}`);
+    }
+    routes.set(routePath, handler);
+    routes.set(`${routePath}.js`, handler);
   }
   return routes;
 }

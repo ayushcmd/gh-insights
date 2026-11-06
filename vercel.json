@@ -1,6 +1,11 @@
 {
   "cleanUrls": true,
   "trailingSlash": false,
+  "rewrites": [
+    { "source": "/api/github/:__ghinsightsRoute", "destination": "/api/github" },
+    { "source": "/api/insights/:__ghinsightsRoute", "destination": "/api/insights" },
+    { "source": "/api/ai/:__ghinsightsRoute", "destination": "/api/ai" }
+  ],
   "headers": [
     {
       "source": "/(.*)",

@@ -3,6 +3,9 @@ import { readFileSync } from "node:fs";
 import { Readable, Writable } from "node:stream";
 import { createDevServer } from "../server/dev-server.js";
 import { parseEnvContent } from "../server/env.js";
+import githubFunction from "../api/github.js";
+import insightsFunction from "../api/insights.js";
+import aiFunction from "../api/ai.js";
 
 class TestResponse extends Writable {
   constructor() {
@@ -18,6 +21,8 @@ class TestResponse extends Writable {
     callback();
   }
   setHeader(name, value) { this.headers[name.toLowerCase()] = value; return this; }
+  status(code) { this.statusCode = code; return this; }
+  send(value) { this.end(value); return this; }
   hasHeader(name) { return Object.hasOwn(this.headers, name.toLowerCase()); }
   writeHead(status, headers = {}) {
     this.statusCode = status;
@@ -26,6 +31,30 @@ class TestResponse extends Writable {
     return this;
   }
   get bodyText() { return Buffer.concat(this.chunks).toString("utf8"); }
+}
+
+async function dispatchVercelFunction(handler, group, operation, path, { method = "GET", body } = {}) {
+  const parsed = new URL(path, "http://localhost");
+  const query = {};
+  for (const key of new Set(parsed.searchParams.keys())) {
+    const values = parsed.searchParams.getAll(key);
+    query[key] = values.length > 1 ? values : values[0];
+  }
+  query.__ghinsightsRoute = operation;
+  const incoming = {
+    method,
+    url: `/api/${group}?__ghinsightsRoute=${encodeURIComponent(operation)}`,
+    headers: { host: "127.0.0.1:3000" },
+    query,
+    socket: { remoteAddress: "127.0.0.1" },
+    body
+  };
+  const outgoing = new TestResponse();
+  await handler(incoming, outgoing);
+  const text = outgoing.bodyText;
+  let json;
+  try { json = text ? JSON.parse(text) : null; } catch {}
+  return { status: outgoing.statusCode, headers: outgoing.headers, text, json };
 }
 
 function request(server, path, { method = "GET", body, rawBody } = {}) {
@@ -108,6 +137,7 @@ function mockUpstreamFetch() {
       requests.github += 1;
       requests.githubAuth ||= options.headers?.Authorization === "Bearer local-test-token";
       const profileMatch = url.pathname.match(/^\/users\/([^/]+)$/);
+      if (profileMatch && decodeURIComponent(profileMatch[1]) === "auth-failure-user") return Response.json({ message: "Bad credentials" }, { status: 401 });
       if (profileMatch) return Response.json(githubProfile(decodeURIComponent(profileMatch[1])));
       const repoMatch = url.pathname.match(/^\/users\/([^/]+)\/repos$/);
       if (repoMatch) return Response.json(githubRepositories(decodeURIComponent(repoMatch[1])));
@@ -124,6 +154,7 @@ function mockUpstreamFetch() {
     if (url.hostname === "generativelanguage.googleapis.com") {
       requests.gemini += 1;
       requests.geminiAuth ||= options.headers?.["x-goog-api-key"] === "local-test-gemini-key";
+      if (url.pathname.includes("auth-failure-model")) return Response.json({ error: { message: "Invalid API key" } }, { status: 401 });
       return Response.json({ candidates: [{ content: { parts: [{ text: "Mocked local AI insight." }] } }] });
     }
     throw new Error("Local route test blocked an unexpected network destination.");
@@ -188,6 +219,19 @@ try {
     ["/api/ai/roast", "POST", { username: "dev-one" }, (result) => assert.equal(result.json.available, true)],
     ["/api/ai/verdict", "POST", { usernameA: "dev-one", usernameB: "dev-two" }, (result) => assert.equal(result.json.available, true)]
   ];
+
+  const vercelFunctions = { github: githubFunction, insights: insightsFunction, ai: aiFunction };
+  for (const [path, method, body, verify] of routeCases) {
+    const parsed = new URL(path, "http://localhost");
+    if (parsed.pathname === "/api/health") continue;
+    const [, , group, operation] = parsed.pathname.split("/");
+    const result = await dispatchVercelFunction(vercelFunctions[group], group, operation, path, { method, body });
+    assert.equal(result.status, 200, `Vercel group dispatch ${method} ${path}: ${result.text}`);
+    verify(result);
+    assert.equal(result.text.includes("local-test-token"), false, "GitHub credentials never appear in API responses");
+    assert.equal(result.text.includes("local-test-gemini-key"), false, "Gemini credentials never appear in API responses");
+  }
+
   for (const [path, method, body, verify] of routeCases) {
     const result = await request(server, path, { method, body });
     assert.equal(result.status, 200, `${method} ${path}: ${result.text}`);
@@ -201,10 +245,29 @@ try {
   assert.equal(wrongMethod.status, 405);
   const badUsername = await request(server, "/api/github/profile?username=bad%2Fname");
   assert.equal(badUsername.status, 400);
+  const authFailure = await request(server, "/api/github/profile?username=auth-failure-user");
+  assert.equal(authFailure.status, 502);
+  assert.equal(authFailure.json.error.code, "github_auth_config");
+  assert.equal(authFailure.text.includes("local-test-token"), false);
   const badJson = await request(server, "/api/insights/analyze", { method: "POST", rawBody: "{" });
   assert.equal(badJson.status, 400);
   const unknown = await request(server, "/api/not-a-route");
   assert.equal(unknown.status, 404);
+  const wrongGroupMethod = await dispatchVercelFunction(githubFunction, "github", "profile", "/api/github/profile?username=dev-one", { method: "POST" });
+  assert.equal(wrongGroupMethod.status, 405);
+  const unknownGroupRoute = await dispatchVercelFunction(aiFunction, "ai", "missing", "/api/ai/missing");
+  assert.equal(unknownGroupRoute.status, 404);
+  const groupPreflight = await dispatchVercelFunction(insightsFunction, "insights", "analyze", "/api/insights/analyze", { method: "OPTIONS" });
+  assert.equal(groupPreflight.status, 204);
+
+  const originalModel = process.env.GEMINI_MODEL;
+  process.env.GEMINI_MODEL = "auth-failure-model";
+  try {
+    const geminiAuthFailure = await dispatchVercelFunction(aiFunction, "ai", "summary", "/api/ai/summary", { method: "POST", body: { username: "dev-one" } });
+    assert.equal(geminiAuthFailure.status, 200);
+    assert.equal(geminiAuthFailure.json.available, false);
+    assert.equal(geminiAuthFailure.text.includes("local-test-gemini-key"), false);
+  } finally { process.env.GEMINI_MODEL = originalModel; }
 
   assert.ok(upstream.github > 0);
   assert.ok(upstream.gemini >= 3);

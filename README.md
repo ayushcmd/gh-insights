@@ -21,8 +21,8 @@ Vanilla HTML, CSS, and JavaScript ES modules; Node.js 20+; Vercel Functions; Git
 ## Project structure
 
 ```text
-api/                 Vercel serverless HTTP endpoints
-lib/                 GitHub collection, scoring, security, cache, and Gemini logic
+api/                 Four Vercel function entrypoints for health, GitHub, insights, and AI
+lib/                 Shared route handlers, GitHub collection, scoring, security, cache, and Gemini logic
 public/              Static HTML, CSS, and browser ES modules
 server/              Native Node.js local development server and .env.local loader
 scripts/              Syntax, logic, and mocked local HTTP checks
@@ -30,6 +30,8 @@ docs/                API, deployment, and environment documentation
 .env.example         Placeholder environment variable names
 vercel.json          Static deployment and security headers
 ```
+
+The 13 public API URLs are preserved. Vercel rewrites route related URLs through four grouped functions; the same endpoint handlers are used directly by local development.
 
 ## Local setup
 

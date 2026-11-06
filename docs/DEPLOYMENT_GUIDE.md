@@ -4,7 +4,7 @@
 2. In Vercel, create a project and import the repository.
 3. Set the **Root Directory** to the repository root containing `vercel.json`, `api/`, `lib/`, and `public/`.
 4. Use the Node.js runtime supported by the project (`package.json` requests Node.js 20 or newer). No build command or framework preset is required; leave the output directory unset.
-5. Deploy once. The frontend is served from `public/`, and files under `api/` become serverless functions.
+5. Deploy once. The frontend is served from `public/`. The `api/` directory contains four Node.js function entrypoints (`health`, `github`, `insights`, and `ai`); `vercel.json` rewrites the existing endpoint URLs to the matching group function. Shared route-specific handlers live under `lib/api-routes/` and are imported by those entrypoints.
 6. In **Project Settings → Environment Variables**, add the optional variables listed in [ENVIRONMENT_SETUP.md](ENVIRONMENT_SETUP.md). Use encrypted Vercel values for API keys.
 7. Select the environments where each variable applies (Production, Preview, and/or Development), save, then redeploy so functions receive the updated settings.
 8. Open `/api/health` on the deployment. It reports application availability and whether optional Gemini integration is configured; it never returns secret values.

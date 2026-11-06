@@ -7,6 +7,7 @@ import { normalizeUsername, HttpError } from "../lib/validation.js";
 import { analyzePersonality, scoreDeveloper, summarizeDeveloper } from "../lib/analysis.js";
 import { collectDeveloper } from "../lib/github.js";
 import { generateInsight } from "../lib/gemini.js";
+import { API_ROUTE_HANDLERS } from "../lib/api-routes.js";
 
 const roots = ["api", "lib", "public/js", "scripts", "server"];
 const files = [];
@@ -150,12 +151,17 @@ try {
   assert.match(styles, /max-width:\s*650px/);
 
   const apiFiles = files.filter((file) => file.replaceAll("\\", "/").startsWith("api/"));
-  const routes = new Map();
+  const functionNames = apiFiles.map((file) => file.replaceAll("\\", "/")).sort();
+  assert.deepEqual(functionNames, ["api/ai.js", "api/github.js", "api/health.js", "api/insights.js"]);
+  assert.ok(apiFiles.length <= 10, "Vercel function count stays within the requested budget");
+  assert.equal(API_ROUTE_HANDLERS.size, 13, "all public API routes remain registered");
+  const functions = new Map();
   for (const file of apiFiles) {
     const route = await import(pathToFileURL(resolve(file)).href);
     assert.equal(typeof route.default, "function", `${file} exports a Vercel handler`);
-    routes.set(file.replaceAll("\\", "/"), route.default);
+    functions.set(file.replaceAll("\\", "/"), route.default);
   }
+  for (const [path, handler] of API_ROUTE_HANDLERS) assert.equal(typeof handler, "function", `${path} has a handler`);
   function responseStub() {
     return {
       statusCode: 200,
@@ -164,21 +170,40 @@ try {
       setHeader(key, value) { this.headers[key] = value; return this; },
       status(value) { this.statusCode = value; return this; },
       send(value) { this.body = value; this.writableEnded = true; return this; },
-      end() { this.writableEnded = true; return this; }
+      end(value) { this.body = value; this.writableEnded = true; return this; }
     };
   }
   const healthResponse = responseStub();
-  await routes.get("api/health.js")({ method: "GET", headers: { host: "localhost:3000" }, query: {}, socket: { remoteAddress: "test-health" } }, healthResponse);
+  await functions.get("api/health.js")({ method: "GET", url: "/api/health", headers: { host: "localhost:3000" }, query: {}, socket: { remoteAddress: "test-health" } }, healthResponse);
   assert.equal(healthResponse.statusCode, 200);
   assert.equal(JSON.parse(healthResponse.body).status, "ok");
   const invalidProfileResponse = responseStub();
-  await routes.get("api/github/profile.js")({ method: "GET", headers: { host: "localhost:3000" }, query: { username: "../private" }, socket: { remoteAddress: "test-invalid" } }, invalidProfileResponse);
+  await API_ROUTE_HANDLERS.get("/api/github/profile")({ method: "GET", url: "/api/github/profile", headers: { host: "localhost:3000" }, query: { username: "../private" }, socket: { remoteAddress: "test-invalid" } }, invalidProfileResponse);
   assert.equal(invalidProfileResponse.statusCode, 400);
   const invalidCompareResponse = responseStub();
-  await routes.get("api/insights/compare.js")({ method: "POST", headers: { host: "localhost:3000" }, body: { usernameA: "octocat", usernameB: "bad/name" }, socket: { remoteAddress: "test-compare" } }, invalidCompareResponse);
+  await API_ROUTE_HANDLERS.get("/api/insights/compare")({ method: "POST", url: "/api/insights/compare", headers: { host: "localhost:3000" }, body: { usernameA: "octocat", usernameB: "bad/name" }, socket: { remoteAddress: "test-compare" } }, invalidCompareResponse);
   assert.equal(invalidCompareResponse.statusCode, 400);
-  JSON.parse(readFileSync("vercel.json", "utf8"));
-  if (!failed) process.stdout.write(`JavaScript syntax, validation/analysis smoke checks, simulated GitHub pagination and Gemini authentication, static assets, and ${apiFiles.length} Vercel handler imports passed. Mocked fixtures only; no external APIs or credentials were used.\n`);
+  const vercelConfig = JSON.parse(readFileSync("vercel.json", "utf8"));
+  for (const group of ["github", "insights", "ai"]) {
+    assert.ok(vercelConfig.rewrites.some((rule) => rule.source === `/api/${group}/:__ghinsightsRoute` && rule.destination === `/api/${group}`), `${group} routes rewrite to their shared function`);
+  }
+  for (const routePath of API_ROUTE_HANDLERS.keys()) {
+    if (routePath === "/api/health") continue;
+    const [, , group, operation] = routePath.split("/");
+    assert.ok(operation && functions.has(`api/${group}.js`), `${routePath} maps to a deployed group function`);
+    assert.ok(vercelConfig.rewrites.some((rule) => rule.source === `/api/${group}/:__ghinsightsRoute` && rule.destination === `/api/${group}`), `${routePath} has a matching Vercel rewrite`);
+  }
+  assert.equal(vercelConfig.rewrites.some((rule) => rule.source === "/api/health"), false, "health remains directly routed");
+  const groupedGithubError = responseStub();
+  await functions.get("api/github.js")({ method: "GET", url: "/api/github?__ghinsightsRoute=profile&username=bad%2Fname", headers: { host: "localhost:3000" }, query: { __ghinsightsRoute: "profile", username: "bad/name" }, socket: { remoteAddress: "test-group-route" } }, groupedGithubError);
+  assert.equal(groupedGithubError.statusCode, 400, "group function dispatches to the original GitHub handler");
+  const unknownGroupRoute = responseStub();
+  await functions.get("api/ai.js")({ method: "GET", url: "/api/ai?__ghinsightsRoute=missing", headers: { host: "localhost:3000" }, query: { __ghinsightsRoute: "missing" }, socket: { remoteAddress: "test-unknown-group-route" } }, unknownGroupRoute);
+  assert.equal(unknownGroupRoute.statusCode, 404);
+  const wrongGroupMethod = responseStub();
+  await functions.get("api/github.js")({ method: "POST", url: "/api/github?__ghinsightsRoute=profile", headers: { host: "localhost:3000" }, query: { __ghinsightsRoute: "profile" }, socket: { remoteAddress: "test-group-method" } }, wrongGroupMethod);
+  assert.equal(wrongGroupMethod.statusCode, 405);
+  if (!failed) process.stdout.write(`JavaScript syntax, validation/analysis smoke checks, simulated GitHub pagination and Gemini authentication, static assets, 4 Vercel function entrypoints, and ${API_ROUTE_HANDLERS.size} public route handlers passed. Mocked fixtures only; no external APIs or credentials were used.\n`);
 } catch (error) {
   failed = true;
   process.stderr.write(`Local check failed: ${error.stack || error}\n`);

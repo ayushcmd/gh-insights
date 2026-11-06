@@ -2,6 +2,8 @@
 
 All endpoints return JSON and are hosted on the same Vercel deployment. The frontend uses same-origin requests. `OPTIONS` preflight is supported; cross-origin access is denied unless the request matches the deployment host or an exact origin in `ALLOWED_ORIGINS`.
 
+The 13 public endpoint URLs are backed by four Vercel function entrypoints: `/api/health`, `/api/github/*`, `/api/insights/*`, and `/api/ai/*`. `vercel.json` rewrites the three endpoint groups to shared functions. The route-specific handlers remain in `lib/api-routes/`, so local development and Vercel use the same request, response, method, authentication, rate-limit, cache, and error behavior.
+
 Usernames are trimmed and checked against GitHub username syntax before any upstream request. No endpoint accepts a GitHub URL. API keys are never accepted from clients.
 
 ## Endpoints
