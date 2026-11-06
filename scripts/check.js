@@ -362,7 +362,7 @@ try {
   for (const [, file] of html.matchAll(/(?:src|href)="\/((?:js|css|images)\/[^\"]+)"/g)) {
     assert.ok(statSync(join("public", file)).isFile(), `Referenced asset exists: ${file}`);
   }
-  assert.match(html, /<image class="hero-cat-mascot" href="\/images\/github-cat-mascot\.png" x="40" y="120" width="350" height="350" preserveAspectRatio="xMidYMid meet"\/>/);
+  assert.match(html, /<image class="hero-cat-mascot" href="\/images\/github-cat-mascot\.png" x="0" y="135" width="310" height="310" preserveAspectRatio="xMidYMid meet"\/>/);
   assert.match(html, /<rect x="84" y="382" width="230" height="204" rx="27" fill="url\(#left-tile\)"/, "the original Java card remains in place above the cat's lower body");
   assert.match(html, /<svg class="hero-art-right"/, "the existing terminal illustration remains present");
   const mascotAsset = readFileSync("public/images/github-cat-mascot.png");
