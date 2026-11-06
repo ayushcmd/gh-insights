@@ -64,6 +64,11 @@
   .compare-panels .chart-layout { grid-template-columns: 125px 1fr; }
   .detail-repo-list { grid-template-columns: 1fr; }
   .comparison-heading { align-items: flex-start; flex-direction: column; }
+  .ai-structured { gap: 12px; }
+  .ai-overview { padding: 13px; }
+  .ai-card-grid, .ai-tech-groups { grid-template-columns: 1fr; }
+  .ai-repository-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .ai-insight-card, .ai-repository-card { padding: 10px; }
 }
 
 @media (max-width: 370px) {

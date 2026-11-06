@@ -10,7 +10,7 @@ Usernames are trimmed and checked against GitHub username syntax before any upst
 
 | Endpoint | Method | Request | Purpose |
 | --- | --- | --- | --- |
-| `/api/health` | GET | None | Service health and optional Gemini configured/not-configured status; no secret values. |
+| `/api/health` | GET | None | Service health and a safe Gemini configuration diagnostic. Reports whether both variables are present and the configured model, but does not call Gemini or validate credentials, model access, project eligibility, or quota. |
 | `/api/github/profile?username=octocat` | GET | `username` query parameter | Public profile fields only. |
 | `/api/github/repositories?username=octocat` | GET | `username` query parameter | Repositories and pagination coverage metadata, up to 1,000 repos. |
 | `/api/github/activity?username=octocat` | GET | `username` query parameter | Public event counts, observed dates, and coverage note. |
@@ -24,7 +24,9 @@ Usernames are trimmed and checked against GitHub username syntax before any upst
 | `/api/ai/roast` | POST | `{"username":"octocat"}` | Optional respectful, evidence-based roast. |
 | `/api/ai/verdict` | POST | `{"usernameA":"octocat","usernameB":"torvalds"}` | Optional neutral Gemini comparison perspective. |
 
-The normal success response is the resource object directly. AI endpoints return `{"available":true,"text":"…"}` or `{"available":false,"message":"…"}`. Error responses use `{"error":{"code":"…","message":"…"}}`; validation errors may include a non-sensitive `details` object.
+The normal success response is the resource object directly. AI endpoints return `{"available":true,"text":"…","format":"structured|markdown","structured":{…},"repositoryLinks":[…]}` or `{"available":false,"code":"…","message":"…"}`. Summary requests ask Gemini GenerateContent for JSON with `generationConfig.responseJsonSchema`; the backend validates and normalizes overview, strengths, project patterns, technology preferences, repository references, growth areas, and limitations. Existing Markdown/text responses from summary, roast, and verdict remain supported. Structured repository links are derived from actual server-retrieved GitHub records; model-generated URLs are discarded. Error responses use `{"error":{"code":"…","message":"…"}}`; validation errors may include a non-sensitive `details` object.
+
+Gemini upstream failures produce structured server logs with HTTP status, Gemini error status/message, configured model, action, and retry attempt/delay details. API keys, authorization headers, request prompts, profile data, and generated text are never logged. Transient HTTP 429 and 503 responses receive at most two exponential-backoff retries; known daily quota exhaustion is not retried. Provider `Retry-After` is honored, and a retry is skipped if the requested wait exceeds the local cap. HTTP 400, 401, 403, 404, and 500 failures are not retried and receive distinct user-facing messages.
 
 ## Status codes
 

@@ -3,6 +3,7 @@ import { state } from "./state.js";
 import { initializeTheme } from "./theme.js";
 import { renderHistory } from "./history.js";
 import { activityChart, downloadLanguageChart, languageChart } from "./charts.js";
+import { renderAiOutput } from "./ai-render.js";
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const reportRoot = $("#report-root");
@@ -341,8 +342,9 @@ async function runAi(button, output, endpoint, username, unavailableLabel) {
   button.textContent = "Generating…";
   output.textContent = "Preparing an evidence-based response from the collected public profile data.";
   try {
-    const result = await apiRequest(endpoint, { username }, { timeoutMs: 32_000 });
-    output.textContent = result.available ? result.text : (result.message || unavailableLabel);
+    const result = await apiRequest(endpoint, { username }, { timeoutMs: 32_000, timeoutMessage: "Gemini took longer than expected. Check the status at /api/health and retry." });
+    if (result.available) renderAiOutput(output, result);
+    else output.textContent = result.message || unavailableLabel;
   } catch (error) {
     output.textContent = error.message || unavailableLabel;
   } finally {
@@ -517,8 +519,9 @@ function renderComparison(result) {
     button.textContent = "Generating…";
     output.textContent = "Comparing structured public profile data.";
     try {
-      const verdict = await apiRequest("/api/ai/verdict", { usernameA: a.profile.username, usernameB: b.profile.username }, { timeoutMs: 38_000 });
-      output.textContent = verdict.available ? verdict.text : verdict.message;
+      const verdict = await apiRequest("/api/ai/verdict", { usernameA: a.profile.username, usernameB: b.profile.username }, { timeoutMs: 38_000, timeoutMessage: "Gemini took longer than expected. Check the status at /api/health and retry." });
+      if (verdict.available) renderAiOutput(output, verdict);
+      else output.textContent = verdict.message;
     } catch (error) { output.textContent = error.message; }
     button.disabled = false;
     button.textContent = "Generate comparison verdict";

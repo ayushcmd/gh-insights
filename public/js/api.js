@@ -5,7 +5,7 @@ export function validUsername(value) {
   return username.length <= 39 && /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/.test(username) && !username.includes("--");
 }
 
-export async function apiRequest(path, payload, { method = "POST", timeoutMs = REQUEST_TIMEOUT_MS } = {}) {
+export async function apiRequest(path, payload, { method = "POST", timeoutMs = REQUEST_TIMEOUT_MS, timeoutMessage = "GitHub is taking longer than expected. Please try again." } = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -26,7 +26,7 @@ export async function apiRequest(path, payload, { method = "POST", timeoutMs = R
     }
     return data;
   } catch (error) {
-    if (error.name === "AbortError") throw new Error("GitHub is taking longer than expected. Please try again.");
+    if (error.name === "AbortError") throw new Error(timeoutMessage);
     if (error instanceof TypeError) throw new Error("Could not reach GH-Insights. Check your connection and retry.");
     throw error;
   } finally {

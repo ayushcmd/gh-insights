@@ -203,9 +203,17 @@ try {
   assert.match(home.text, /GitHub Personality Analyzer/);
   assert.ok(home.headers["content-security-policy"]);
   assert.equal((await request(server, "/js/app.js")).status, 200);
+  const catMascot = await request(server, "/images/github-cat-mascot.png");
+  assert.equal(catMascot.status, 200, "the transparent cat mascot is served locally");
+  assert.match(catMascot.headers["content-type"], /image\/png/);
 
   const routeCases = [
-    ["/api/health", "GET", undefined, (result) => assert.equal(result.json.status, "ok")],
+    ["/api/health", "GET", undefined, (result) => {
+      assert.equal(result.json.status, "ok");
+      assert.equal(result.json.diagnostics.gemini.configured, true);
+      assert.equal(result.json.diagnostics.gemini.requestedModel, "local-mock-model");
+      assert.equal(result.json.diagnostics.gemini.upstreamChecked, false);
+    }],
     ["/api/github/profile?username=dev-one", "GET", undefined, (result) => assert.equal(result.json.username, "dev-one")],
     ["/api/github/repositories?username=dev-one", "GET", undefined, (result) => assert.equal(result.json.repositories.length, 3)],
     ["/api/github/activity?username=dev-one", "GET", undefined, (result) => assert.equal(result.json.eventCount, 2)],

@@ -6,8 +6,9 @@ import { spawnSync } from "node:child_process";
 import { normalizeUsername, HttpError } from "../lib/validation.js";
 import { analyzePersonality, scoreDeveloper, summarizeDeveloper } from "../lib/analysis.js";
 import { collectDeveloper } from "../lib/github.js";
-import { generateInsight } from "../lib/gemini.js";
+import { generateInsight, parseStructuredInsight, validateStructuredInsight } from "../lib/gemini.js";
 import { API_ROUTE_HANDLERS } from "../lib/api-routes.js";
+import { markdownFallbackText, parseMarkdown, renderAiOutput } from "../public/js/ai-render.js";
 
 const roots = ["api", "lib", "public/js", "scripts", "server"];
 const files = [];
@@ -111,6 +112,7 @@ try {
     const generated = await generateInsight("summary", { profile: { username: "fixture-user" } });
     assert.equal(generated.available, true);
     assert.equal(generated.text, "Simulated profile summary.");
+    assert.equal(generated.format, "markdown", "legacy Gemini Markdown/text responses remain supported");
     assert.equal(geminiRequest.headers["x-goog-api-key"], "local-placeholder-key");
     assert.equal(geminiRequest.url.includes("local-placeholder-key"), false);
   } finally {
@@ -137,18 +139,245 @@ try {
     else process.env.GEMINI_MODEL = savedModel;
   }
 
+  const fixtureRepo = { name: "alpha", fullName: "fixture-user/alpha", description: "Verified repository description", language: "JavaScript" };
+  const minimalStructured = validateStructuredInsight({ overview: "A brief evidence-based overview." });
+  assert.ok(minimalStructured, "empty sections and missing optional fields normalize safely");
+  assert.deepEqual(minimalStructured.strengths, []);
+  assert.deepEqual(minimalStructured.technologyPreferences, { languages: [], frameworks: [], tools: [] });
+  assert.equal(parseStructuredInsight("{ malformed JSON", {}), null, "malformed JSON falls back to the legacy Markdown path");
+  const validatedStructured = validateStructuredInsight({
+    overview: "A concise overview.",
+    strengths: [{ title: "Broad portfolio", explanation: "Several public projects span different topics." }],
+    projectPatterns: [{ title: "Small tools", explanation: "Several projects are focused utilities.", repositories: ["fixture-user/alpha", "attacker/fake"] }],
+    notableRepositories: [{ name: "fixture-user/alpha", rationale: "Frequently updated.", url: "https://evil.example/repo" }, { name: "attacker/fake", rationale: "Hallucinated." }]
+  }, { repositoryCatalog: [fixtureRepo] });
+  assert.equal(validatedStructured.projectPatterns[0].repositories.length, 1, "project references must match retrieved repository records");
+  assert.equal(validatedStructured.notableRepositories.length, 1, "unknown AI repository names are removed");
+  assert.equal(validatedStructured.notableRepositories[0].url, "https://github.com/fixture-user/alpha", "repository links are derived from GitHub data, not model URLs");
+
+  const markdown = parseMarkdown("### Developer Overview\n\nA **clear** summary.\n\n#### Strengths\n\n- Broad range\n- [alpha](https://github.com/fixture-user/alpha)\n- [fake](https://github.com/attacker/fake)\n\n---\n\n**unfinished", { allowedLinks: ["https://github.com/fixture-user/alpha"] });
+  assert.deepEqual(markdown.map((block) => block.type), ["heading", "paragraph", "heading", "unorderedList", "rule", "paragraph"]);
+  const markdownText = JSON.stringify(markdown);
+  assert.equal(markdownText.includes("**"), false, "unmatched and matched Markdown delimiters are parsed away");
+  assert.equal(markdownText.includes("###"), false, "heading markers are represented as semantic nodes");
+  assert.equal((markdownText.match(/"type":"link"/g) || []).length, 1, "only the listed, retrieved repository is rendered as a link");
+  const linkedMarkdown = parseMarkdown("[alpha](https://github.com/fixture-user/alpha) [fake](https://github.com/attacker/fake)", { allowedLinks: ["https://github.com/fixture-user/alpha"] });
+  assert.equal(JSON.stringify(linkedMarkdown).includes("https://github.com/fixture-user/alpha"), true);
+  assert.equal(JSON.stringify(linkedMarkdown).includes("https://github.com/attacker/fake"), false, "only retrieved repository links become active links");
+  const malformedMarkdown = parseMarkdown("###\n\n**unfinished\n\n- still readable\n\n---");
+  assert.equal(JSON.stringify(malformedMarkdown).includes("**"), false);
+  const parserFailureFallback = parseMarkdown("### **Readable fallback", null);
+  assert.equal(parserFailureFallback[0].children[0].value, "Readable fallback", "parser failures degrade to safe readable text");
+  assert.match(markdownFallbackText("### **Readable** fallback"), /Readable fallback/);
+
+  class TestNode {
+    constructor(tagName, value = "") { this.tagName = tagName; this.value = value; this.children = []; this.attributes = {}; }
+    append(...nodes) { this.children.push(...nodes); }
+    replaceChildren(...nodes) { this.children = [...nodes]; this.value = ""; }
+    setAttribute(name, value) { this.attributes[name] = String(value); }
+    get childNodes() { return this.children; }
+    get lastChild() { return this.children.at(-1); }
+    get textContent() { return this.value + this.children.map((child) => child.textContent).join(""); }
+    set textContent(value) { this.value = String(value); this.children = []; }
+  }
+  const originalDocument = globalThis.document;
+  globalThis.document = {
+    createElement: (tagName) => new TestNode(tagName),
+    createTextNode: (value) => new TestNode("#text", String(value)),
+    createElementNS: (_namespace, tagName) => new TestNode(tagName)
+  };
+  try {
+    const renderedStructured = new TestNode("div");
+    renderAiOutput(renderedStructured, {
+      structured: {
+        overview: "A short overview.", keySignals: ["Several repositories"],
+        strengths: [{ title: "Breadth", explanation: "Projects use multiple languages." }],
+        projectPatterns: [{ title: "Small tools", explanation: "Several repositories are utilities.", repositories: [{ fullName: "fixture-user/alpha", url: "https://github.com/fixture-user/alpha" }] }],
+        technologyPreferences: { languages: ["JavaScript"], frameworks: [], tools: [] },
+        notableRepositories: [{ fullName: "fixture-user/alpha", url: "https://github.com/fixture-user/alpha", description: "Verified project", language: "JavaScript" }],
+        growthAreas: [{ title: "Document releases", recommendation: "Add concise release notes." }],
+        limitations: ["Only fetched public data is represented."]
+      }, repositoryLinks: ["https://github.com/fixture-user/alpha"]
+    });
+    for (const heading of ["Developer Overview", "Observed Strengths", "Project Patterns", "Technology Preferences", "Notable Repositories", "Growth Opportunities", "Methodology and limitations"]) {
+      assert.ok(renderedStructured.textContent.includes(heading), `structured UI renders the ${heading} section`);
+    }
+    assert.ok(renderedStructured.textContent.includes("Measured GitHub statistics"), "structured UI distinguishes measured stats from AI interpretation");
+
+    const renderedEmpty = new TestNode("div");
+    renderAiOutput(renderedEmpty, { structured: { overview: "Overview only." } });
+    assert.ok(renderedEmpty.textContent.includes("Overview only."), "empty optional sections render safely");
+
+    const renderedMalformed = new TestNode("div");
+    renderAiOutput(renderedMalformed, { text: "### **Readable fallback" });
+    assert.ok(renderedMalformed.textContent.includes("Readable fallback"));
+    assert.doesNotMatch(renderedMalformed.textContent, /(?:\*\*|###)/, "malformed Markdown markers are not shown raw");
+
+    const renderedUnsafe = new TestNode("div");
+    renderAiOutput(renderedUnsafe, { text: "<script>alert(1)</script><img src=x onerror=run()> **safe**" });
+    const renderedTags = [];
+    const collectTags = (node) => { renderedTags.push(node.tagName); for (const child of node.childNodes) collectTags(child); };
+    collectTags(renderedUnsafe);
+    assert.equal(renderedTags.some((tag) => ["script", "img"].includes(tag)), false, "raw HTML never creates executable or unsafe elements");
+    assert.ok(renderedUnsafe.textContent.includes("safe"));
+  } finally { globalThis.document = originalDocument; }
+
+  const structuredPriorKey = process.env.GEMINI_API_KEY;
+  const structuredPriorModel = process.env.GEMINI_MODEL;
+  const structuredPriorFetch = globalThis.fetch;
+  process.env.GEMINI_API_KEY = "local-test-gemini-key";
+  process.env.GEMINI_MODEL = "gemini-3.8-flash";
+  let capturedGeminiRequest;
+  globalThis.fetch = async (input, init) => {
+    capturedGeminiRequest = { url: String(input), headers: init.headers, body: JSON.parse(init.body) };
+    const response = {
+      overview: "A short evidence-led overview.",
+      keySignals: ["Several small tools"],
+      strengths: [{ title: "Focus", explanation: "Projects show a recurring utility theme." }],
+      projectPatterns: [{ title: "Small tools", explanation: "Several repos are focused utilities.", repositories: ["fixture-user/alpha", "not-in-catalog"] }],
+      technologyPreferences: { languages: ["JavaScript"], frameworks: [], tools: [] },
+      notableRepositories: [{ name: "fixture-user/alpha", rationale: "Useful public project.", url: "https://evil.example/repo" }],
+      growthAreas: [],
+      limitations: ["Only fetched public data is assessed."]
+    };
+    return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify(response) }] } }] });
+  };
+  try {
+    const structuredResult = await generateInsight("summary", { profile: { username: "structured-fixture-user" }, repositoryCatalog: [fixtureRepo] });
+    assert.equal(structuredResult.format, "structured");
+    assert.equal(structuredResult.structured.notableRepositories[0].url, "https://github.com/fixture-user/alpha");
+    assert.equal(structuredResult.repositoryLinks.includes("https://github.com/fixture-user/alpha"), true);
+    assert.equal(capturedGeminiRequest.url, "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent");
+    assert.equal(capturedGeminiRequest.headers["x-goog-api-key"], "local-test-gemini-key");
+    assert.equal(capturedGeminiRequest.body.generationConfig.temperature, undefined, "Gemini 3.8 request omits deprecated sampling configuration");
+    assert.equal(capturedGeminiRequest.body.generationConfig.responseMimeType, "application/json");
+    assert.deepEqual(Object.keys(capturedGeminiRequest.body.generationConfig.responseJsonSchema.properties).sort(), ["growthAreas", "keySignals", "limitations", "notableRepositories", "overview", "projectPatterns", "strengths", "technologyPreferences"]);
+  } finally {
+    globalThis.fetch = structuredPriorFetch;
+    if (structuredPriorKey === undefined) delete process.env.GEMINI_API_KEY;
+    else process.env.GEMINI_API_KEY = structuredPriorKey;
+    if (structuredPriorModel === undefined) delete process.env.GEMINI_MODEL;
+    else process.env.GEMINI_MODEL = structuredPriorModel;
+  }
+
+  const diagnosisPriorKey = process.env.GEMINI_API_KEY;
+  const diagnosisPriorModel = process.env.GEMINI_MODEL;
+  const diagnosisPriorFetch = globalThis.fetch;
+  const diagnosisPriorConsoleError = console.error;
+  const diagnosisLogs = [];
+  const diagnosticKeyFixture = `AQ.${"A".repeat(36)}`;
+  process.env.GEMINI_API_KEY = diagnosticKeyFixture;
+  process.env.GEMINI_MODEL = "gemini-3.8-flash";
+  console.error = (entry) => diagnosisLogs.push(String(entry));
+  const geminiErrorResponse = (status, message, errorStatus = "API_ERROR", headers = {}) => Response.json({ error: { status: errorStatus, message } }, { status, headers });
+  try {
+    for (const [status, errorStatus, expectedCode] of [
+      [400, "INVALID_ARGUMENT", "gemini_invalid_request"],
+      [401, "UNAUTHENTICATED", "gemini_authentication"],
+      [403, "PERMISSION_DENIED", "gemini_permission_denied"],
+      [404, "NOT_FOUND", "gemini_model_not_found"],
+      [500, "INTERNAL", "gemini_internal_error"]
+    ]) {
+      let calls = 0;
+      globalThis.fetch = async () => {
+        calls += 1;
+        return geminiErrorResponse(status, status === 401 ? `Invalid API key ${diagnosticKeyFixture}` : "Mocked provider diagnostic", errorStatus);
+      };
+      const result = await generateInsight("summary", { profile: { username: `diagnostic-status-${status}` } });
+      assert.equal(result.code, expectedCode);
+      assert.equal(calls, 1, `permanent HTTP ${status} failure does not retry`);
+    }
+
+    let quotaCalls = 0;
+    globalThis.fetch = async () => {
+      quotaCalls += 1;
+      return geminiErrorResponse(429, "Per-minute request limit exceeded", "RESOURCE_EXHAUSTED", { "retry-after": "0" });
+    };
+    const quotaResult = await generateInsight("summary", { profile: { username: "diagnostic-quota-fixture" } });
+    assert.equal(quotaResult.code, "gemini_quota_or_rate_limit");
+    assert.equal(quotaCalls, 3, "transient 429 receives at most two retries");
+
+    let dailyQuotaCalls = 0;
+    globalThis.fetch = async () => {
+      dailyQuotaCalls += 1;
+      return geminiErrorResponse(429, "Daily quota exceeded; quota resets tomorrow", "RESOURCE_EXHAUSTED");
+    };
+    const dailyQuotaResult = await generateInsight("roast", { profile: { username: "diagnostic-daily-quota-fixture" } });
+    assert.equal(dailyQuotaResult.code, "gemini_daily_quota_exhausted");
+    assert.equal(dailyQuotaCalls, 1, "known daily quota exhaustion is not pointlessly retried");
+
+    for (const [errorStatus, message] of [
+      ["quota_exceeded", "Project daily quota reached"],
+      ["RESOURCE_EXHAUSTED", "Quota exceeded for metric: generate_content_free_tier_requests"]
+    ]) {
+      let calls = 0;
+      globalThis.fetch = async () => {
+        calls += 1;
+        return geminiErrorResponse(429, message, errorStatus);
+      };
+      const result = await generateInsight("roast", { profile: { username: `daily-${calls}-${errorStatus}` } });
+      assert.equal(result.code, "gemini_daily_quota_exhausted", "Gemini daily quota markers are classified without relying on prose wording");
+      assert.equal(calls, 1, "Gemini daily quota markers do not retry");
+    }
+
+    let overloadCalls = 0;
+    globalThis.fetch = async () => {
+      overloadCalls += 1;
+      if (overloadCalls === 1) return geminiErrorResponse(503, "Temporary overload", "UNAVAILABLE", { "retry-after": "0" });
+      return Response.json({ candidates: [{ content: { parts: [{ text: "Recovered response" }] } }] });
+    };
+    const recoveredResult = await generateInsight("verdict", { profile: { username: "diagnostic-overload-fixture" } });
+    assert.equal(recoveredResult.available, true);
+    assert.equal(overloadCalls, 2, "503 retries with backoff and can recover");
+
+    let longRetryAfterCalls = 0;
+    globalThis.fetch = async () => {
+      longRetryAfterCalls += 1;
+      return geminiErrorResponse(429, "Too many requests", "RESOURCE_EXHAUSTED", { "retry-after": "30" });
+    };
+    const longWaitResult = await generateInsight("roast", { profile: { username: "diagnostic-long-retry-fixture" } });
+    assert.equal(longRetryAfterCalls, 1, "Retry-After is not violated when its requested wait exceeds the retry cap");
+    assert.match(longWaitResult.message, /at least 30 seconds/);
+
+    const serializedLogs = diagnosisLogs.join("\n");
+    assert.match(serializedLogs, /"httpStatus":401/);
+    assert.match(serializedLogs, /"geminiErrorStatus":"PERMISSION_DENIED"/);
+    assert.match(serializedLogs, /"requestedModel":"gemini-3\.8-flash"/);
+    assert.match(serializedLogs, /"action":"summary"/);
+    assert.match(serializedLogs, /"retryDelayMs":\d+/);
+    assert.equal(serializedLogs.includes(diagnosticKeyFixture), false, "failure logs redact keys");
+    assert.equal(serializedLogs.includes("diagnostic-quota-fixture"), false, "failure logs omit profile prompts and personal data");
+  } finally {
+    globalThis.fetch = diagnosisPriorFetch;
+    console.error = diagnosisPriorConsoleError;
+    if (diagnosisPriorKey === undefined) delete process.env.GEMINI_API_KEY;
+    else process.env.GEMINI_API_KEY = diagnosisPriorKey;
+    if (diagnosisPriorModel === undefined) delete process.env.GEMINI_MODEL;
+    else process.env.GEMINI_MODEL = diagnosisPriorModel;
+  }
+
   const html = readFileSync("public/index.html", "utf8");
   const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]);
   assert.equal(new Set(ids).size, ids.length, "HTML element IDs must be unique");
-  for (const [, file] of html.matchAll(/(?:src|href)="\/((?:js|css)\/[^\"]+)"/g)) {
+  for (const [, file] of html.matchAll(/(?:src|href)="\/((?:js|css|images)\/[^\"]+)"/g)) {
     assert.ok(statSync(join("public", file)).isFile(), `Referenced asset exists: ${file}`);
   }
-  const browserCode = readFileSync("public/js/app.js", "utf8") + readFileSync("public/js/charts.js", "utf8");
+  assert.match(html, /<image class="hero-cat-mascot" href="\/images\/github-cat-mascot\.png" x="40" y="120" width="350" height="350" preserveAspectRatio="xMidYMid meet"\/>/);
+  assert.match(html, /<rect x="84" y="382" width="230" height="204" rx="27" fill="url\(#left-tile\)"/, "the original Java card remains in place above the cat's lower body");
+  assert.match(html, /<svg class="hero-art-right"/, "the existing terminal illustration remains present");
+  const mascotAsset = readFileSync("public/images/github-cat-mascot.png");
+  assert.equal(mascotAsset.toString("hex", 0, 8), "89504e470d0a1a0a", "the mascot asset is a valid PNG");
+  assert.ok([4, 6].includes(mascotAsset[25]), "the mascot PNG retains an alpha channel");
+  const browserCode = readFileSync("public/js/app.js", "utf8") + readFileSync("public/js/charts.js", "utf8") + readFileSync("public/js/ai-render.js", "utf8");
   assert.doesNotMatch(browserCode, /\.innerHTML\s*=|insertAdjacentHTML\s*\(/);
   assert.doesNotMatch(browserCode, /GEMINI_API_KEY|GITHUB_TOKEN/);
-  const styles = ["public/css/main.css", "public/css/responsive.css"].map((file) => readFileSync(file, "utf8")).join("\n");
+  const styles = ["public/css/main.css", "public/css/dashboard.css", "public/css/responsive.css", "public/css/redesign.css"].map((file) => readFileSync(file, "utf8")).join("\n");
   assert.match(styles, /prefers-reduced-motion/);
   assert.match(styles, /max-width:\s*650px/);
+  assert.match(styles, /ai-insight-card/);
+  assert.match(styles, /\.ai-card-grid, \.ai-tech-groups\s*\{\s*grid-template-columns:\s*1fr/);
+  assert.match(styles, /:root\[data-theme='light'\]/);
+  assert.match(styles, /:root\[data-theme='dark'\]/);
 
   const apiFiles = files.filter((file) => file.replaceAll("\\", "/").startsWith("api/"));
   const functionNames = apiFiles.map((file) => file.replaceAll("\\", "/")).sort();
@@ -176,7 +405,10 @@ try {
   const healthResponse = responseStub();
   await functions.get("api/health.js")({ method: "GET", url: "/api/health", headers: { host: "localhost:3000" }, query: {}, socket: { remoteAddress: "test-health" } }, healthResponse);
   assert.equal(healthResponse.statusCode, 200);
-  assert.equal(JSON.parse(healthResponse.body).status, "ok");
+  const healthPayload = JSON.parse(healthResponse.body);
+  assert.equal(healthPayload.status, "ok");
+  assert.equal(healthPayload.diagnostics.gemini.upstreamChecked, false, "health diagnostics do not make an upstream request");
+  assert.equal(JSON.stringify(healthPayload).includes("GEMINI_API_KEY"), false, "health diagnostics never reveal credentials");
   const invalidProfileResponse = responseStub();
   await API_ROUTE_HANDLERS.get("/api/github/profile")({ method: "GET", url: "/api/github/profile", headers: { host: "localhost:3000" }, query: { username: "../private" }, socket: { remoteAddress: "test-invalid" } }, invalidProfileResponse);
   assert.equal(invalidProfileResponse.statusCode, 400);
@@ -203,7 +435,7 @@ try {
   const wrongGroupMethod = responseStub();
   await functions.get("api/github.js")({ method: "POST", url: "/api/github?__ghinsightsRoute=profile", headers: { host: "localhost:3000" }, query: { __ghinsightsRoute: "profile" }, socket: { remoteAddress: "test-group-method" } }, wrongGroupMethod);
   assert.equal(wrongGroupMethod.statusCode, 405);
-  if (!failed) process.stdout.write(`JavaScript syntax, validation/analysis smoke checks, simulated GitHub pagination and Gemini authentication, static assets, 4 Vercel function entrypoints, and ${API_ROUTE_HANDLERS.size} public route handlers passed. Mocked fixtures only; no external APIs or credentials were used.\n`);
+  if (!failed) process.stdout.write(`JavaScript syntax, GitHub analysis, Gemini structured/Markdown compatibility, error diagnosis and retries, static assets, light/dark and mobile AI styles, 4 Vercel function entrypoints, and ${API_ROUTE_HANDLERS.size} public route handlers passed. Mocked fixtures only; no external APIs or credentials were used.\n`);
 } catch (error) {
   failed = true;
   process.stderr.write(`Local check failed: ${error.stack || error}\n`);
