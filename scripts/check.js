@@ -383,7 +383,7 @@ try {
   const functionNames = apiFiles.map((file) => file.replaceAll("\\", "/")).sort();
   assert.deepEqual(functionNames, ["api/ai.js", "api/github.js", "api/health.js", "api/insights.js"]);
   assert.ok(apiFiles.length <= 10, "Vercel function count stays within the requested budget");
-  assert.equal(API_ROUTE_HANDLERS.size, 13, "all public API routes remain registered");
+  assert.equal(API_ROUTE_HANDLERS.size, 15, "all public API routes remain registered");
   const functions = new Map();
   for (const file of apiFiles) {
     const route = await import(pathToFileURL(resolve(file)).href);
@@ -412,6 +412,9 @@ try {
   const invalidProfileResponse = responseStub();
   await API_ROUTE_HANDLERS.get("/api/github/profile")({ method: "GET", url: "/api/github/profile", headers: { host: "localhost:3000" }, query: { username: "../private" }, socket: { remoteAddress: "test-invalid" } }, invalidProfileResponse);
   assert.equal(invalidProfileResponse.statusCode, 400);
+  const invalidTrackerResponse = responseStub();
+  await API_ROUTE_HANDLERS.get("/api/github/activity-tracker")({ method: "GET", url: "/api/github/activity-tracker", headers: { host: "localhost:3000" }, query: { username: "../private" }, socket: { remoteAddress: "test-invalid-tracker" } }, invalidTrackerResponse);
+  assert.equal(invalidTrackerResponse.statusCode, 400);
   const invalidCompareResponse = responseStub();
   await API_ROUTE_HANDLERS.get("/api/insights/compare")({ method: "POST", url: "/api/insights/compare", headers: { host: "localhost:3000" }, body: { usernameA: "octocat", usernameB: "bad/name" }, socket: { remoteAddress: "test-compare" } }, invalidCompareResponse);
   assert.equal(invalidCompareResponse.statusCode, 400);
@@ -429,6 +432,9 @@ try {
   const groupedGithubError = responseStub();
   await functions.get("api/github.js")({ method: "GET", url: "/api/github?__ghinsightsRoute=profile&username=bad%2Fname", headers: { host: "localhost:3000" }, query: { __ghinsightsRoute: "profile", username: "bad/name" }, socket: { remoteAddress: "test-group-route" } }, groupedGithubError);
   assert.equal(groupedGithubError.statusCode, 400, "group function dispatches to the original GitHub handler");
+  const groupedTrackerError = responseStub();
+  await functions.get("api/github.js")({ method: "GET", url: "/api/github?__ghinsightsRoute=activity-tracker&username=bad%2Fname", headers: { host: "localhost:3000" }, query: { __ghinsightsRoute: "activity-tracker", username: "bad/name" }, socket: { remoteAddress: "test-group-tracker" } }, groupedTrackerError);
+  assert.equal(groupedTrackerError.statusCode, 400, "group function dispatches to the activity tracker handler");
   const unknownGroupRoute = responseStub();
   await functions.get("api/ai.js")({ method: "GET", url: "/api/ai?__ghinsightsRoute=missing", headers: { host: "localhost:3000" }, query: { __ghinsightsRoute: "missing" }, socket: { remoteAddress: "test-unknown-group-route" } }, unknownGroupRoute);
   assert.equal(unknownGroupRoute.statusCode, 404);

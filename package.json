@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "node server/dev-server.js",
     "start": "node server/dev-server.js",
-    "check": "node scripts/check.js && node scripts/dev-server-check.js"
+    "check": "node scripts/check.js && node scripts/dev-server-check.js && node scripts/activity-tracker-check.js"
   },
   "engines": {
     "node": ">=20"

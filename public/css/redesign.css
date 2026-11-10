@@ -116,12 +116,12 @@ main { min-height: 0; }
 }
 .hero-content { position: relative; z-index: 2; }
 .hero-mode-switch {
-  width: min(510px, 100%);
-  min-height: 110px;
+  width: min(690px, 100%);
+  min-height: 104px;
   justify-content: stretch;
   gap: 6px;
   margin: 0 auto 34px;
-  padding: 10px;
+  padding: 8px;
   border: 1px solid rgba(255, 255, 255, .97);
   border-radius: 40px;
   background: linear-gradient(145deg, #fff, #eee8ff 70%, #e9e1ff);
@@ -129,23 +129,23 @@ main { min-height: 0; }
 }
 .hero-mode-switch .mode-tab {
   display: inline-flex;
-  flex: 1 1 50%;
+  flex: 1 1 33.333%;
   min-width: 0;
   justify-content: center;
   align-items: center;
-  gap: 14px;
-  padding: 0 20px;
+  gap: 10px;
+  padding: 0 14px;
   border: 1px solid transparent;
   border-radius: 32px;
   color: #4e2fd3;
   background: transparent;
-  font: 700 27px/1 Manrope, 'Segoe UI', sans-serif;
+  font: 700 22px/1 Manrope, 'Segoe UI', sans-serif;
   letter-spacing: -.03em;
   transition: color .18s ease, background .18s ease, transform .18s ease, box-shadow .18s ease;
 }
-.hero-mode-switch .mode-tab svg { width: 31px; height: 31px; flex: 0 0 auto; fill: currentColor; stroke: currentColor; stroke-width: 2.5; }
-.hero-mode-switch .mode-tab:first-child svg { color: #9beaff; }
-.hero-mode-switch .mode-tab:last-child svg { fill: none; }
+.hero-mode-switch .mode-tab svg { width: 28px; height: 28px; flex: 0 0 auto; fill: currentColor; stroke: currentColor; stroke-width: 2.5; }
+.hero-mode-switch #mode-insights svg { color: #9beaff; }
+.hero-mode-switch #mode-compare svg, .hero-mode-switch #mode-activity svg { fill: none; }
 .hero-mode-switch .mode-tab:hover { color: #3217b9; }
 .hero-mode-switch .mode-tab.is-active {
   color: #fff;

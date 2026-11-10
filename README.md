@@ -19,7 +19,24 @@ GH-Insights turns public GitHub profile, repository, language, and activity data
 
 ## What it does
 
-Enter a public GitHub username to explore a structured profile report. Switch to **V/S** mode to compare two public profiles side by side. GH-Insights focuses on observable public data and explains the limits of each signal.
+Enter a public GitHub username to explore a structured profile report. Switch to **V/S** mode to compare two public profiles side by side, or switch to **Activity** mode to explore GitHub contribution activity in depth. GH-Insights focuses on observable public data and explains the limits of each signal.
+
+### GitHub Activity Tracker
+
+- Track verified GitHub collaboration metrics:
+  1. **Total Commits**: GitHub-attributed commit contributions across repositories.
+  2. **Issues Created**: Issues opened by the developer (excluding pull requests).
+  3. **Code Reviews**: Pull-request reviews submitted by the developer.
+  4. **Pull Requests Merged**: Pull requests authored by the developer that were successfully merged.
+- Interactive time filters: **All time**, **Current year**, **Last 12 months**, **Last 6 months**, **Last 30 days**, and **Custom date range**.
+- Rich data visualizations:
+  - Monthly activity multi-series bar chart.
+  - Cumulative contribution trajectory trend line chart.
+  - Collaboration distribution donut chart.
+  - Repository-wise activity breakdown with progress metrics.
+- Recent activity timeline: recent merged pull requests, created issues, and submitted code reviews.
+- Key highlights: most active repository, most active month, and average monthly contribution volume.
+- Clear data transparency: labeled "Public GitHub activity", private contributions noted anonymously when enabled, and strict distinction between opened vs merged pull requests.
 
 ### Developer insights
 
@@ -51,11 +68,11 @@ When configured, Gemini can generate a developer summary, a gentle roast, or a n
 | Frontend | HTML, CSS, and browser JavaScript modules |
 | Local server | Native Node.js HTTP modules |
 | Production API | Four Vercel Function entrypoints |
-| GitHub data | GitHub REST API |
+| GitHub data | GitHub GraphQL API & REST API |
 | Optional AI | Google Gemini API |
 | Runtime dependencies | None |
 
-The 13 existing public API paths are preserved. Vercel rewrites group related paths through `/api/health`, `/api/github`, `/api/insights`, and `/api/ai`. Local development dispatches those paths to the same route-specific handlers; it does not require Vercel CLI, account login, or project linking.
+The 15 public API paths are backed by four grouped Vercel functions. Vercel rewrites group related paths through `/api/health`, `/api/github`, `/api/insights`, and `/api/ai`. Local development dispatches those paths to the same route-specific handlers; it does not require Vercel CLI, account login, or project linking.
 
 ```text
 Browser ──► local Node server or Vercel Functions
