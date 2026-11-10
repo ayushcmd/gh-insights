@@ -149,6 +149,72 @@ function mockUpstreamFetch() {
           { type: "PullRequestEvent", created_at: recent }
         ]);
       }
+      if (url.pathname === "/graphql") {
+        const bodyObj = typeof options.body === "string" ? JSON.parse(options.body) : {};
+        const login = bodyObj.variables?.login || "dev-one";
+        const recent = new Date().toISOString();
+        return Response.json({
+          data: {
+            user: {
+              login,
+              name: `Local Fixture ${login}`,
+              avatarUrl: "https://avatars.githubusercontent.com/u/7",
+              bio: "A mocked local profile",
+              createdAt: "2020-01-01T00:00:00Z",
+              contributionsCollection: {
+                startedAt: "2025-01-01T00:00:00Z",
+                endedAt: recent,
+                totalCommitContributions: 18,
+                totalIssueContributions: 4,
+                totalPullRequestReviewContributions: 6,
+                totalPullRequestContributions: 5,
+                restrictedContributionsCount: 0,
+                contributionCalendar: {
+                  totalContributions: 28,
+                  weeks: [
+                    {
+                      contributionDays: [
+                        { date: recent.slice(0, 10), contributionCount: 5 }
+                      ]
+                    }
+                  ]
+                },
+                commitContributionsByRepository: [
+                  { repository: { nameWithOwner: `${login}/project-1`, name: "project-1", url: `https://github.com/${login}/project-1`, isPrivate: false }, contributions: { totalCount: 18 } }
+                ],
+                issueContributionsByRepository: [
+                  { repository: { nameWithOwner: `${login}/project-2`, name: "project-2", url: `https://github.com/${login}/project-2`, isPrivate: false }, contributions: { totalCount: 4 } }
+                ],
+                pullRequestReviewContributionsByRepository: [
+                  { repository: { nameWithOwner: `${login}/project-3`, name: "project-3", url: `https://github.com/${login}/project-3`, isPrivate: false }, contributions: { totalCount: 6 } }
+                ]
+              }
+            },
+            mergedPRs: {
+              issueCount: 3,
+              nodes: [
+                { title: "Fix parser bug", number: 12, url: `https://github.com/${login}/project-1/pull/12`, mergedAt: recent, createdAt: recent, repository: { nameWithOwner: `${login}/project-1`, name: "project-1", url: `https://github.com/${login}/project-1` } }
+              ]
+            },
+            createdIssues: {
+              issueCount: 4,
+              nodes: [
+                { title: "Add dark theme", number: 8, url: `https://github.com/${login}/project-2/issues/8`, createdAt: recent, repository: { nameWithOwner: `${login}/project-2`, name: "project-2", url: `https://github.com/${login}/project-2` } }
+              ]
+            }
+          }
+        });
+      }
+      if (url.pathname === "/search/issues") {
+        const recent = new Date().toISOString();
+        return Response.json({
+          total_count: 3,
+          incomplete_results: false,
+          items: [
+            { id: 1, title: "Mocked search item", number: 1, html_url: "https://github.com/dev-one/project-1/pull/1", created_at: recent, updated_at: recent, closed_at: recent, repository_url: "https://api.github.com/repos/dev-one/project-1" }
+          ]
+        });
+      }
       return Response.json({ message: "Not Found" }, { status: 404 });
     }
     if (url.hostname === "generativelanguage.googleapis.com") {
@@ -191,7 +257,7 @@ try {
   server = await createDevServer();
   const expectedRoutes = [
     "/api/health",
-    "/api/github/profile", "/api/github/repositories", "/api/github/activity", "/api/github/languages",
+    "/api/github/profile", "/api/github/repositories", "/api/github/activity", "/api/github/activity-tracker", "/api/github/activity-summary", "/api/github/languages",
     "/api/insights/analyze", "/api/insights/personality", "/api/insights/score", "/api/insights/deep", "/api/insights/compare",
     "/api/ai/summary", "/api/ai/roast", "/api/ai/verdict"
   ].sort();
@@ -217,6 +283,16 @@ try {
     ["/api/github/profile?username=dev-one", "GET", undefined, (result) => assert.equal(result.json.username, "dev-one")],
     ["/api/github/repositories?username=dev-one", "GET", undefined, (result) => assert.equal(result.json.repositories.length, 3)],
     ["/api/github/activity?username=dev-one", "GET", undefined, (result) => assert.equal(result.json.eventCount, 2)],
+    ["/api/github/activity-tracker?username=dev-one", "GET", undefined, (result) => {
+      assert.equal(result.json.username, "dev-one");
+      assert.ok(result.json.metrics.commits);
+      assert.ok(result.json.metrics.mergedPullRequests);
+      assert.ok(result.json.charts);
+    }],
+    ["/api/github/activity-summary?username=dev-one", "GET", undefined, (result) => {
+      assert.equal(result.json.username, "dev-one");
+      assert.ok(result.json.metrics);
+    }],
     ["/api/github/languages?username=dev-one", "GET", undefined, (result) => assert.equal(result.json.distribution.length, 3)],
     ["/api/insights/analyze", "POST", { username: "dev-one" }, (result) => assert.equal(result.json.statistics.repositoriesRetrieved, 3)],
     ["/api/insights/personality", "POST", { username: "dev-one" }, (result) => assert.ok(result.json.headline)],
@@ -281,7 +357,7 @@ try {
   assert.ok(upstream.gemini >= 3);
   assert.equal(upstream.githubAuth, true);
   assert.equal(upstream.geminiAuth, true);
-  process.stdout.write("Local native HTTP request routing passed static, error, preflight, and all 13 API route checks with mocked GitHub/Gemini responses. No sockets or live network requests were used.\n");
+  process.stdout.write("Local native HTTP request routing passed static, error, preflight, and all 15 API route checks with mocked GitHub/Gemini responses. No sockets or live network requests were used.\n");
 } finally {
   globalThis.fetch = priorFetch;
   for (const name of envNames) restoreEnvironment(name, priorEnv[name]);

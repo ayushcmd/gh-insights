@@ -7,6 +7,9 @@
   .mode-tab { min-width: 55px; padding-inline: 8px; }
   .stats-grid { grid-template-columns: repeat(3, 1fr); }
   .repo-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .activity-metrics-grid { grid-template-columns: repeat(2, 1fr); }
+  .activity-highlights-grid { grid-template-columns: repeat(2, 1fr); }
+  .activity-recent-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 650px) {
@@ -69,6 +72,13 @@
   .ai-card-grid, .ai-tech-groups { grid-template-columns: 1fr; }
   .ai-repository-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
   .ai-insight-card, .ai-repository-card { padding: 10px; }
+  .hero-mode-switch { min-height: 54px; border-radius: 20px; padding: 4px; }
+  .hero-mode-switch .mode-tab { padding: 0 6px; font-size: 13px; gap: 6px; border-radius: 16px; }
+  .hero-mode-switch .mode-tab svg { width: 16px; height: 16px; }
+  .activity-metrics-grid { grid-template-columns: 1fr; }
+  .activity-highlights-grid { grid-template-columns: 1fr; }
+  .filter-pill-group { width: 100%; justify-content: center; }
+  .custom-date-row { flex-direction: column; align-items: stretch; }
 }
 
 @media (max-width: 370px) {

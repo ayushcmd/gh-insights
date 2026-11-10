@@ -2,7 +2,7 @@
 
 All endpoints return JSON and are hosted on the same Vercel deployment. The frontend uses same-origin requests. `OPTIONS` preflight is supported; cross-origin access is denied unless the request matches the deployment host or an exact origin in `ALLOWED_ORIGINS`.
 
-The 13 public endpoint URLs are backed by four Vercel function entrypoints: `/api/health`, `/api/github/*`, `/api/insights/*`, and `/api/ai/*`. `vercel.json` rewrites the three endpoint groups to shared functions. The route-specific handlers remain in `lib/api-routes/`, so local development and Vercel use the same request, response, method, authentication, rate-limit, cache, and error behavior.
+The 15 public endpoint URLs are backed by four Vercel function entrypoints: `/api/health`, `/api/github/*`, `/api/insights/*`, and `/api/ai/*`. `vercel.json` rewrites the three endpoint groups to shared functions. The route-specific handlers remain in `lib/api-routes/`, so local development and Vercel use the same request, response, method, authentication, rate-limit, cache, and error behavior.
 
 Usernames are trimmed and checked against GitHub username syntax before any upstream request. No endpoint accepts a GitHub URL. API keys are never accepted from clients.
 
@@ -14,6 +14,8 @@ Usernames are trimmed and checked against GitHub username syntax before any upst
 | `/api/github/profile?username=octocat` | GET | `username` query parameter | Public profile fields only. |
 | `/api/github/repositories?username=octocat` | GET | `username` query parameter | Repositories and pagination coverage metadata, up to 1,000 repos. |
 | `/api/github/activity?username=octocat` | GET | `username` query parameter | Public event counts, observed dates, and coverage note. |
+| `/api/github/activity-tracker?username=octocat` | GET / POST | `username`, optional `range`, `from`, `to` | Consolidated GitHub activity tracker: total commits, issues created, code reviews, and merged PRs with monthly and repository breakdowns. |
+| `/api/github/activity-summary?username=octocat` | GET / POST | `username`, optional `range`, `from`, `to` | Alias to Activity Tracker endpoint. |
 | `/api/github/languages?username=octocat` | GET | `username` query parameter | Primary-language counts by repository and coverage. |
 | `/api/insights/analyze` | POST | `{"username":"octocat"}` | Full dashboard report, score, pattern labels, repository highlights, and coverage. |
 | `/api/insights/personality` | POST | `{"username":"octocat"}` | Explainable public activity pattern labels. |
@@ -25,6 +27,27 @@ Usernames are trimmed and checked against GitHub username syntax before any upst
 | `/api/ai/verdict` | POST | `{"usernameA":"octocat","usernameB":"torvalds"}` | Optional neutral Gemini comparison perspective. |
 
 The normal success response is the resource object directly. AI endpoints return `{"available":true,"text":"…","format":"structured|markdown","structured":{…},"repositoryLinks":[…]}` or `{"available":false,"code":"…","message":"…"}`. Summary requests ask Gemini GenerateContent for JSON with `generationConfig.responseJsonSchema`; the backend validates and normalizes overview, strengths, project patterns, technology preferences, repository references, growth areas, and limitations. Existing Markdown/text responses from summary, roast, and verdict remain supported. Structured repository links are derived from actual server-retrieved GitHub records; model-generated URLs are discarded. Error responses use `{"error":{"code":"…","message":"…"}}`; validation errors may include a non-sensitive `details` object.
+
+### Activity Tracker endpoint
+
+The `/api/github/activity-tracker` and `/api/github/activity-summary` endpoints accept `GET` (query parameters `username`, `range`, `from`, `to`) or `POST` (`{"username":"…", "range":"all|year|12m|6m|30d|custom", "from":"…", "to":"…"}`).
+
+The endpoint consolidates four core collaboration metrics with monthly and repository breakdowns:
+
+| Metric | Definition & Data Source |
+| --- | --- |
+| Total Commits | GitHub-attributed commit contributions across repositories via GraphQL `contributionsCollection.totalCommitContributions` and `commitContributionsByRepository`. |
+| Issues Created | Issues opened by the selected developer, strictly excluding pull requests, via `totalIssueContributions` and Search API `type:issue author:{user}`. |
+| Code Reviews | Formal pull-request reviews submitted by the developer via `totalPullRequestReviewContributions` and `pullRequestReviewContributionsByRepository`. |
+| Pull Requests Merged | Pull requests authored by the developer that were successfully merged into target branches, verified via Search API `type:pr author:{user} is:merged`. Distinct from PRs opened. |
+
+The response includes:
+- `metrics`: Totals, monthly breakdowns, and top repositories for commits, issues, code reviews, and merged pull requests.
+- `totals`: Combined contribution counts and anonymous restricted/private contribution counts.
+- `highlights`: Most active repository, most active month, and average monthly contribution volume.
+- `charts`: Ready-to-render data arrays for monthly activity bar chart, cumulative trend line chart, collaboration distribution donut chart, and repository breakdown.
+- `recentActivity`: Up to 10 recent merged pull requests, opened issues, and code reviews.
+- `dataCompleteness`: Scope indicators ("Public GitHub activity"), data sources, and transparent disclosure of limitations.
 
 Gemini upstream failures produce structured server logs with HTTP status, Gemini error status/message, configured model, action, and retry attempt/delay details. API keys, authorization headers, request prompts, profile data, and generated text are never logged. Transient HTTP 429 and 503 responses receive at most two exponential-backoff retries; known daily quota exhaustion is not retried. Provider `Retry-After` is honored, and a retry is skipped if the requested wait exceeds the local cap. HTTP 400, 401, 403, 404, and 500 failures are not retried and receive distinct user-facing messages.
 

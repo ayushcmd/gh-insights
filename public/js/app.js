@@ -2,12 +2,21 @@ import { apiRequest, compactNumber, formatDate, safeGithubUrl, validUsername } f
 import { state } from "./state.js";
 import { initializeTheme } from "./theme.js";
 import { renderHistory } from "./history.js";
-import { activityChart, downloadLanguageChart, languageChart } from "./charts.js";
+import {
+  activityChart,
+  downloadLanguageChart,
+  languageChart,
+  monthlyActivityBarChart,
+  contributionTrendLineChart,
+  contributionDistributionChart,
+  repositoryBreakdownChart
+} from "./charts.js";
 import { renderAiOutput } from "./ai-render.js";
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const reportRoot = $("#report-root");
 const comparisonRoot = $("#comparison-root");
+const activityRoot = $("#activity-root");
 const loadingPanel = $("#loading-panel");
 const errorPanel = $("#error-panel");
 let lastRequest = null;
@@ -62,14 +71,29 @@ function setBusy(busy, title = "Reading public profile", copy = "Collecting repo
     $("#loading-title").textContent = title;
     $("#loading-copy").textContent = copy;
   }
-  for (const form of [$("#explore-form"), $("#compare-form")]) {
+  for (const form of [$("#explore-form"), $("#compare-form"), $("#activity-form")].filter(Boolean)) {
     for (const button of form.querySelectorAll("button[type=submit]")) button.disabled = busy;
   }
 }
 
-function showError(error, comparison = false) {
-  const inline = $(comparison ? "#compare-error" : "#input-error");
-  inline.hidden = true;
+function showError(error, modeOrComparison = false) {
+  const isComparison = modeOrComparison === true || modeOrComparison === "compare";
+  const isActivity = modeOrComparison === "activity";
+  $("#input-error").hidden = true;
+  $("#compare-error").hidden = true;
+  const actErr = $("#activity-input-error");
+  if (actErr) actErr.hidden = true;
+  if (isActivity && actErr) {
+    actErr.hidden = false;
+    actErr.textContent = error.message || "Could not load activity for this profile.";
+  } else if (isComparison) {
+    $("#compare-error").hidden = false;
+    $("#compare-error").textContent = error.message || "Could not compare these profiles.";
+  } else {
+    $("#input-error").hidden = false;
+    $("#input-error").textContent = error.message || "Could not load this profile.";
+  }
+
   errorPanel.hidden = false;
   $("#error-title").textContent = error.status === 404 ? "GitHub account not found" : "Could not load this report";
   $("#error-copy").textContent = error.message || "The request could not be completed. Please retry.";
@@ -79,6 +103,8 @@ function dismissError() {
   errorPanel.hidden = true;
   $("#input-error").hidden = true;
   $("#compare-error").hidden = true;
+  const actErr = $("#activity-input-error");
+  if (actErr) actErr.hidden = true;
 }
 
 function profileCard(data, showArchetype = true) {
@@ -402,6 +428,7 @@ function detailsPanel(data, username) {
 function renderInsights(data) {
   reportRoot.replaceChildren();
   comparisonRoot.replaceChildren();
+  activityRoot.replaceChildren();
   const root = el("article", "report");
   root.append(reportTopline(data), profileCard(data), statistics(data));
   const firstRow = el("div", "dashboard-grid");
@@ -481,6 +508,7 @@ function comparisonActivityPanel(data, label) {
 function renderComparison(result) {
   reportRoot.replaceChildren();
   comparisonRoot.replaceChildren();
+  activityRoot.replaceChildren();
   const [a, b] = result.developers;
   const root = el("article", "comparison-report");
   const heading = el("div", "comparison-heading");
@@ -599,20 +627,445 @@ async function compare(firstValue, secondValue) {
   } finally { if (revision === viewRevision) setBusy(false); }
 }
 
+function renderActivityDashboard(data, currentOptions = {}) {
+  activityRoot.replaceChildren();
+
+  const wrap = el("article", "report activity-report");
+
+  // 1. Topline
+  const topline = el("div", "report-topline");
+  const scopeTag = el("span", "archetype-pill", data.dataCompleteness?.scopeLabel || "Public GitHub activity");
+  const timeInfo = el("span", "activity-time-info", `${data.timeRange?.label || "Activity"} · Timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"}`);
+  topline.append(scopeTag, timeInfo);
+  wrap.append(topline);
+
+  // 2. Profile Card
+  const profileCardEl = el("section", "profile-card");
+  const avatar = el("img", "avatar");
+  avatar.src = data.profile?.avatarUrl || "";
+  avatar.alt = `${data.username} avatar`;
+  avatar.loading = "lazy";
+  avatar.referrerPolicy = "no-referrer";
+  avatar.addEventListener("error", () => avatar.removeAttribute("src"), { once: true });
+
+  const main = el("div", "profile-main");
+  const nameLine = el("div", "profile-name-line");
+  nameLine.append(
+    el("h2", "profile-name", data.profile?.name || data.username),
+    externalLink(data.profile?.profileUrl || `https://github.com/${data.username}`, `@${data.username}`, "profile-handle")
+  );
+  main.append(nameLine);
+  if (data.profile?.bio) main.append(el("p", "profile-bio", data.profile.bio));
+
+  const meta = el("div", "profile-meta");
+  if (data.profile?.createdAt) {
+    meta.append(el("span", "", `Joined GitHub ${formatDate(data.profile.createdAt, { year: "numeric", month: "short" })}`));
+  }
+  const totalCount = data.totals?.totalContributions || 0;
+  meta.append(el("span", "", `${compactNumber(totalCount)} total contributions in window`));
+  if (data.totals?.hasRestrictedContributions) {
+    meta.append(el("span", "private-contributions-badge", `+ ${compactNumber(data.totals.restrictedContributions)} private contributions`));
+  }
+  main.append(meta);
+  profileCardEl.append(avatar, main);
+  wrap.append(profileCardEl);
+
+  // 3. Time Filter Toolbar
+  const filterToolbar = el("div", "activity-filter-toolbar");
+  const filterGroup = el("div", "filter-pill-group");
+  const filterRanges = [
+    { key: "all", label: "All time" },
+    { key: "year", label: "Current year" },
+    { key: "12m", label: "Last 12 months" },
+    { key: "6m", label: "Last 6 months" },
+    { key: "30d", label: "Last 30 days" },
+    { key: "custom", label: "Custom range" }
+  ];
+
+  const activeKey = currentOptions.range || data.timeRange?.key || "12m";
+
+  // Custom date picker form row
+  const customRow = el("div", "custom-date-row");
+  customRow.hidden = activeKey !== "custom";
+
+  const fromLabel = el("label", "custom-date-label", "From: ");
+  const fromInput = el("input", "custom-date-input");
+  fromInput.type = "date";
+  fromInput.value = (currentOptions.from || data.timeRange?.from || "").slice(0, 10);
+  fromLabel.append(fromInput);
+
+  const toLabel = el("label", "custom-date-label", "To: ");
+  const toInput = el("input", "custom-date-input");
+  toInput.type = "date";
+  toInput.value = (currentOptions.to || data.timeRange?.to || "").slice(0, 10);
+  toLabel.append(toInput);
+
+  const applyBtn = el("button", "button button-secondary custom-date-apply", "Apply Range");
+  applyBtn.type = "button";
+  applyBtn.addEventListener("click", () => {
+    if (fromInput.value) {
+      analyzeActivity(data.username, { range: "custom", from: fromInput.value, to: toInput.value || undefined });
+    }
+  });
+
+  customRow.append(fromLabel, toLabel, applyBtn);
+
+  filterRanges.forEach((range) => {
+    const btn = el("button", `filter-pill${activeKey === range.key ? " is-active" : ""}`, range.label);
+    btn.type = "button";
+    btn.addEventListener("click", () => {
+      if (range.key === "custom") {
+        customRow.hidden = !customRow.hidden;
+        for (const b of filterGroup.querySelectorAll(".filter-pill")) b.classList.remove("is-active");
+        btn.classList.add("is-active");
+      } else {
+        customRow.hidden = true;
+        analyzeActivity(data.username, { range: range.key });
+      }
+    });
+    filterGroup.append(btn);
+  });
+
+  filterToolbar.append(filterGroup, customRow);
+  wrap.append(filterToolbar);
+
+  // 4. Empty state notice if totalCount === 0
+  if (totalCount === 0) {
+    const emptyCard = el("section", "panel activity-empty-panel");
+    const emptyTitle = el("h3", "", "No Activity Recorded");
+    const emptyCopy = el("p", "", `No public contributions were found for @${data.username} in the ${data.timeRange?.label || "selected"} window. Try switching to "All time" or selecting another date filter.`);
+    emptyCard.append(emptyTitle, emptyCopy);
+    wrap.append(emptyCard);
+  }
+
+  // 5. Four Primary Metric Cards
+  const cardsGrid = el("div", "stats-grid activity-metrics-grid");
+
+  function createActivityMetricCard(metricData, typeClass, iconPath) {
+    const card = el("article", `stat-card activity-metric-card ${typeClass}`);
+    const topRow = el("div", "activity-card-top");
+    const label = el("div", "stat-label", metricData.label);
+    topRow.append(label);
+
+    const iconSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    iconSvg.setAttribute("viewBox", "0 0 24 24");
+    iconSvg.setAttribute("aria-hidden", "true");
+    iconSvg.setAttribute("class", "metric-card-icon");
+    const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    p.setAttribute("d", iconPath);
+    iconSvg.append(p);
+    topRow.append(iconSvg);
+
+    const value = el("div", "stat-value", compactNumber(metricData.total));
+    const help = el("div", "stat-help", metricData.description);
+    card.append(topRow, value, help);
+
+    // Repository badge if available
+    const topRepo = metricData.repositories?.[0];
+    if (topRepo) {
+      const repoPill = el("div", "activity-top-repo");
+      repoPill.append(
+        el("span", "repo-pill-label", "Top repo: "),
+        externalLink(topRepo.url, topRepo.name, "repo-pill-name"),
+        el("span", "repo-pill-count", ` (${compactNumber(topRepo.count)})`)
+      );
+      card.append(repoPill);
+    }
+
+    // Expandable details for monthly and repository breakdown
+    if ((metricData.monthly && metricData.monthly.length > 0) || (metricData.repositories && metricData.repositories.length > 0)) {
+      const details = el("details", "metric-breakdown-details");
+      const summary = el("summary", "", "View breakdown");
+      const detailsContent = el("div", "metric-details-content");
+
+      // Monthly breakdown table
+      if (metricData.monthly?.length) {
+        const mHeading = el("strong", "details-subhead", "Monthly activity");
+        const mList = el("div", "details-chips-list");
+        for (const m of metricData.monthly) {
+          if (m.count > 0) {
+            const chip = el("span", "details-chip", `${m.label || m.month}: ${m.count}`);
+            mList.append(chip);
+          }
+        }
+        if (!mList.childNodes.length) mList.append(el("span", "details-chip-empty", "0 recorded in active months"));
+        detailsContent.append(mHeading, mList);
+      }
+
+      // Repository breakdown list
+      if (metricData.repositories?.length) {
+        const rHeading = el("strong", "details-subhead", "Repository breakdown");
+        const rList = el("div", "details-repo-list");
+        for (const r of metricData.repositories.slice(0, 5)) {
+          const row = el("div", "details-repo-row");
+          row.append(externalLink(r.url, r.name, "details-repo-link"), el("span", "details-repo-count", String(r.count)));
+          rList.append(row);
+        }
+        detailsContent.append(rHeading, rList);
+      }
+
+      details.append(summary, detailsContent);
+      card.append(details);
+    }
+
+    return card;
+  }
+
+  // Card A: Commits
+  cardsGrid.append(createActivityMetricCard(
+    data.metrics.commits,
+    "metric-commits",
+    "M9 12a3 3 0 1 0 6 0 3 3 0 0 0-6 0M3 12h6m6 0h6"
+  ));
+  // Card B: Issues
+  cardsGrid.append(createActivityMetricCard(
+    data.metrics.issues,
+    "metric-issues",
+    "M12 8v4m0 4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"
+  ));
+  // Card C: Reviews
+  cardsGrid.append(createActivityMetricCard(
+    data.metrics.reviews,
+    "metric-reviews",
+    "M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"
+  ));
+  // Card D: Merged PRs
+  cardsGrid.append(createActivityMetricCard(
+    data.metrics.mergedPullRequests,
+    "metric-prs",
+    "M18 11.5a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0z M6 6a3 3 0 1 0 0 6 3 3 0 0 0 0-6z M6 18a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M6 9v3m0 3v-3m0 0h5.5"
+  ));
+
+  wrap.append(cardsGrid);
+
+  // 6. Highlights Strip
+  const highlightsPanel = el("section", "panel activity-highlights-panel");
+  highlightsPanel.append(sectionHeading("OVERVIEW", "Collaboration Highlights", "Key velocity and contribution focus indicators."));
+
+  const hlGrid = el("div", "activity-highlights-grid");
+
+  // Most active repo
+  const hlRepo = el("div", "highlight-item");
+  hlRepo.append(el("div", "highlight-label", "Most Active Repository"));
+  if (data.highlights?.mostActiveRepo) {
+    const val = el("div", "highlight-value");
+    val.append(externalLink(data.highlights.mostActiveRepo.url, data.highlights.mostActiveRepo.name));
+    hlRepo.append(val, el("div", "highlight-sub", `${data.highlights.mostActiveRepo.count} contributions`));
+  } else {
+    hlRepo.append(el("div", "highlight-value", "None recorded"));
+  }
+  hlGrid.append(hlRepo);
+
+  // Most active month
+  const hlMonth = el("div", "highlight-item");
+  hlMonth.append(el("div", "highlight-label", "Most Active Month"));
+  if (data.highlights?.mostActiveMonth) {
+    hlMonth.append(
+      el("div", "highlight-value", data.highlights.mostActiveMonth.label),
+      el("div", "highlight-sub", `${data.highlights.mostActiveMonth.count} contributions`)
+    );
+  } else {
+    hlMonth.append(el("div", "highlight-value", "None recorded"));
+  }
+  hlGrid.append(hlMonth);
+
+  // Average monthly contributions
+  const hlAvg = el("div", "highlight-item");
+  hlAvg.append(
+    el("div", "highlight-label", "Monthly Average"),
+    el("div", "highlight-value", `${data.highlights?.averageMonthlyContributions || 0} / mo`),
+    el("div", "highlight-sub", `Across ${data.charts?.monthlyActivity?.length || 0} observed months`)
+  );
+  hlGrid.append(hlAvg);
+
+  highlightsPanel.append(hlGrid);
+  wrap.append(highlightsPanel);
+
+  // 7. Visualizations Grid
+  const vizGrid = el("div", "dashboard-grid activity-viz-grid");
+
+  // Monthly Activity Chart Panel (Wide)
+  const monthlyPanel = panel("ACTIVITY OVER TIME", "Monthly Activity Breakdown", "Contributions per month categorized by commits, issues, reviews, and merged PRs.", true);
+  const monthlyChartWrap = el("div", "monthly-chart-wrap");
+  monthlyActivityBarChart(monthlyChartWrap, data.charts?.monthlyActivity || []);
+  monthlyPanel.append(monthlyChartWrap);
+  vizGrid.append(monthlyPanel);
+
+  // Contribution Trend Line Chart
+  const trendPanel = panel("MOMENTUM", "Contribution Trajectory Trend", "Cumulative contribution volume progression across this period.");
+  const trendChartWrap = el("div", "trend-chart-wrap");
+  contributionTrendLineChart(trendChartWrap, data.charts?.cumulativeTrend || []);
+  trendPanel.append(trendChartWrap);
+  vizGrid.append(trendPanel);
+
+  // Contribution Distribution Donut Chart
+  const distPanel = panel("DISTRIBUTION", "Collaboration Distribution", "Proportion of work divided between commits, issues, code reviews, and merged PRs.");
+  const distChartWrap = el("div", "distribution-chart-wrap");
+  contributionDistributionChart(distChartWrap, data.charts?.contributionDistribution || []);
+  distPanel.append(distChartWrap);
+  vizGrid.append(distPanel);
+
+  // Repository-wise Activity Breakdown (Wide)
+  const repoPanel = panel("REPOSITORIES", "Repository Activity Breakdown", "Top repositories by direct contribution volume.", true);
+  const repoChartWrap = el("div", "repo-breakdown-wrap");
+  repositoryBreakdownChart(repoChartWrap, data.charts?.repositoryBreakdown || []);
+  repoPanel.append(repoChartWrap);
+  vizGrid.append(repoPanel);
+
+  wrap.append(vizGrid);
+
+  // 8. Recent Activity Section
+  const recentSection = el("section", "panel panel-wide activity-recent-panel");
+  recentSection.append(sectionHeading("RECENT WORK", "Recent Contributions & Collaboration", "Recent merged pull requests, created issues, and pull request reviews."));
+
+  const recentGrid = el("div", "activity-recent-grid");
+
+  // Merged PRs Column
+  const prsCol = el("div", "recent-activity-col");
+  prsCol.append(el("h4", "recent-col-heading", "Merged Pull Requests"));
+  const prList = el("div", "recent-items-list");
+  const prs = data.recentActivity?.mergedPullRequests || [];
+  if (!prs.length) {
+    prList.append(el("div", "recent-empty-item", "No merged PRs recorded in this range."));
+  } else {
+    prs.forEach((pr) => {
+      const item = el("div", "recent-activity-card");
+      const titleLink = externalLink(pr.url, pr.title, "recent-item-title");
+      const sub = el("div", "recent-item-meta");
+      sub.append(
+        el("span", "recent-badge badge-merged", `PR #${pr.number}`),
+        el("span", "recent-item-repo", pr.repo),
+        el("span", "recent-item-date", pr.mergedAt ? formatDate(pr.mergedAt) : "")
+      );
+      item.append(titleLink, sub);
+      prList.append(item);
+    });
+  }
+  prsCol.append(prList);
+  recentGrid.append(prsCol);
+
+  // Issues Column
+  const issuesCol = el("div", "recent-activity-col");
+  issuesCol.append(el("h4", "recent-col-heading", "Issues Created"));
+  const issueList = el("div", "recent-items-list");
+  const issues = data.recentActivity?.issues || [];
+  if (!issues.length) {
+    issueList.append(el("div", "recent-empty-item", "No issues opened in this range."));
+  } else {
+    issues.forEach((iss) => {
+      const item = el("div", "recent-activity-card");
+      const titleLink = externalLink(iss.url, iss.title, "recent-item-title");
+      const sub = el("div", "recent-item-meta");
+      sub.append(
+        el("span", "recent-badge badge-issue", `Issue #${iss.number}`),
+        el("span", "recent-item-repo", iss.repo),
+        el("span", "recent-item-date", iss.createdAt ? formatDate(iss.createdAt) : "")
+      );
+      item.append(titleLink, sub);
+      issueList.append(item);
+    });
+  }
+  issuesCol.append(issueList);
+  recentGrid.append(issuesCol);
+
+  // Reviews Column
+  const reviewsCol = el("div", "recent-activity-col");
+  reviewsCol.append(el("h4", "recent-col-heading", "Code Reviews"));
+  const reviewList = el("div", "recent-items-list");
+  const revs = data.recentActivity?.reviews || [];
+  if (!revs.length) {
+    reviewList.append(el("div", "recent-empty-item", "No submitted code reviews recorded."));
+  } else {
+    revs.forEach((rev) => {
+      const item = el("div", "recent-activity-card");
+      const titleLink = externalLink(rev.url, rev.repo, "recent-item-title");
+      const sub = el("div", "recent-item-meta");
+      sub.append(
+        el("span", "recent-badge badge-review", "Review"),
+        el("span", "recent-item-repo", `${rev.count} review${rev.count === 1 ? "" : "s"} submitted`)
+      );
+      item.append(titleLink, sub);
+      reviewList.append(item);
+    });
+  }
+  reviewsCol.append(reviewList);
+  recentGrid.append(reviewsCol);
+
+  recentSection.append(recentGrid);
+  wrap.append(recentSection);
+
+  // 9. Data Notice Panel
+  const noticePanel = el("section", "data-notice activity-notice-panel");
+  const noticeMark = el("span", "notice-mark", "i");
+  const noticeContent = el("div", "notice-content");
+  noticeContent.append(el("strong", "", `Data source: ${data.dataCompleteness?.dataSource || "GitHub API"}`));
+  const ul = el("ul", "notice-list");
+  for (const lim of data.dataCompleteness?.limitations || []) {
+    ul.append(el("li", "", lim));
+  }
+  noticeContent.append(ul);
+  noticePanel.append(noticeMark, noticeContent);
+  wrap.append(noticePanel);
+
+  activityRoot.append(wrap);
+  activityRoot.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+async function analyzeActivity(rawUsername, options = {}) {
+  const username = String(rawUsername || "").trim();
+  if (!validUsername(username)) {
+    showError(new Error("Use a valid GitHub username with up to 39 letters, numbers, or single hyphens."), "activity");
+    return;
+  }
+  dismissError();
+  setBusy(true, "Analyzing GitHub activity", `Collecting contribution records, pull requests, issues, and reviews for @${username}.`);
+  const revision = ++viewRevision;
+  lastRequest = { mode: "activity", username, options };
+
+  try {
+    const range = options.range || "12m";
+    const params = new URLSearchParams({ username, range });
+    if (options.from) params.set("from", options.from);
+    if (options.to) params.set("to", options.to);
+
+    const data = await apiRequest(`/api/github/activity-tracker?${params.toString()}`, null, { method: "GET" });
+    if (revision !== viewRevision) return;
+
+    state.activeUsername = username;
+    state.addHistory(username);
+    renderHistory((name) => {
+      if (state.mode === "activity") analyzeActivity(name);
+      else explore(name);
+    });
+
+    renderActivityDashboard(data, options);
+  } catch (error) {
+    if (revision === viewRevision) showError(error, "activity");
+  } finally {
+    if (revision === viewRevision) setBusy(false);
+  }
+}
+
 function setMode(mode) {
   if (mode === state.mode) return;
   viewRevision += 1;
   setBusy(false);
   state.mode = mode;
   const insights = mode === "insights";
+  const compare = mode === "compare";
+  const activity = mode === "activity";
   $("#mode-insights").classList.toggle("is-active", insights);
-  $("#mode-compare").classList.toggle("is-active", !insights);
+  $("#mode-compare").classList.toggle("is-active", compare);
+  $("#mode-activity").classList.toggle("is-active", activity);
   $("#mode-insights").setAttribute("aria-selected", String(insights));
-  $("#mode-compare").setAttribute("aria-selected", String(!insights));
+  $("#mode-compare").setAttribute("aria-selected", String(compare));
+  $("#mode-activity").setAttribute("aria-selected", String(activity));
   $("#insights-view").hidden = !insights;
-  $("#compare-view").hidden = insights;
+  $("#compare-view").hidden = !compare;
+  $("#activity-view").hidden = !activity;
   reportRoot.replaceChildren();
   comparisonRoot.replaceChildren();
+  activityRoot.replaceChildren();
   dismissError();
 }
 
@@ -678,15 +1131,22 @@ function initializeConstellation() {
 function initialize() {
   initializeTheme();
   initializeConstellation();
-  renderHistory((username) => explore(username));
+  const handleSelect = (username) => {
+    if (state.mode === "activity") analyzeActivity(username);
+    else explore(username);
+  };
+  renderHistory(handleSelect);
   $("#explore-form").addEventListener("submit", (event) => { event.preventDefault(); explore($("#username-input").value); });
   $("#compare-form").addEventListener("submit", (event) => { event.preventDefault(); compare($("#username-a").value, $("#username-b").value); });
+  $("#activity-form").addEventListener("submit", (event) => { event.preventDefault(); analyzeActivity($("#activity-username-input").value); });
   $("#mode-insights").addEventListener("click", () => setMode("insights"));
   $("#mode-compare").addEventListener("click", () => setMode("compare"));
-  $("#clear-history").addEventListener("click", () => { state.clearHistory(); renderHistory((username) => explore(username)); });
+  $("#mode-activity").addEventListener("click", () => setMode("activity"));
+  $("#clear-history").addEventListener("click", () => { state.clearHistory(); renderHistory(handleSelect); });
   $("#retry-button").addEventListener("click", () => {
     errorPanel.hidden = true;
     if (lastRequest?.mode === "compare") compare(lastRequest.first, lastRequest.second);
+    else if (lastRequest?.mode === "activity") analyzeActivity(lastRequest.username, lastRequest.options);
     else if (lastRequest?.username) explore(lastRequest.username);
   });
 }
