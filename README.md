@@ -161,6 +161,10 @@ GH-Insights is configured for Vercel. Follow the [Deployment Guide](docs/DEPLOYM
 
 GH-Insights is an independent project and is not an official GitHub product.
 
+## License
+
+Original contributions controlled by the copyright holder are offered under the [Apache License, Version 2.0](LICENSE) for new distributions. The [previous MIT license](LICENSES/MIT-previous.txt) and prior grants remain valid. See [NOTICE](NOTICE).
+
 ## Project documentation
 
 - [API Documentation](docs/API_DOCUMENTATION.md)
